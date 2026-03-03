@@ -17,10 +17,13 @@ from backend.core.limiter import limiter
 from backend.core.logging_config import configure_logging
 from backend.core.metrics import ERROR_COUNT, REQUEST_COUNT, REQUEST_LATENCY
 from backend.core.tenant_middleware import TenantMiddleware
+from backend.core.tracing import configure_tracing
 from database.connection import engine, validate_database_connection
 from database.models import Base
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 configure_logging()
+configure_tracing()
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,8 @@ app.add_exception_handler(
 )
 
 app.add_middleware(TenantMiddleware)
+
+FastAPIInstrumentor.instrument_app(app)
 
 # ---------------------------------------------------
 # Routers

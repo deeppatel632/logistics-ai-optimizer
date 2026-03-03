@@ -98,6 +98,9 @@ def validate_database_connection(engine, retries=5, delay=3):
 
 engine = create_engine_with_pool(settings.db_name)
 
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor  # noqa: E402
+SQLAlchemyInstrumentor().instrument(engine=engine)
+
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
