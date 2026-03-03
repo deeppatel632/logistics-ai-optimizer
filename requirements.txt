@@ -58,6 +58,7 @@ pluggy==1.6.0
 prometheus_client==0.24.1
 protobuf==6.33.5
 pyasn1==0.6.2
+pybreaker==1.4.1
 pycparser==2.23
 pydantic==2.12.5
 pydantic-settings==2.11.0

@@ -6,9 +6,11 @@ import time
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import declarative_base, sessionmaker, with_loader_criteria
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
 from backend.core.config import get_settings
 from backend.core.tenant_context import get_current_tenant
+from backend.core.circuit_breaker import db_breaker
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -93,12 +95,21 @@ def validate_database_connection(engine, retries=5, delay=3):
 
 
 # -------------------------------
+# DB HEALTH CHECK
+# -------------------------------
+
+@db_breaker
+def safe_db_check() -> None:
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+
+
+# -------------------------------
 # ENGINE + SESSION FACTORY
 # -------------------------------
 
 engine = create_engine_with_pool(settings.db_name)
 
-from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor  # noqa: E402
 SQLAlchemyInstrumentor().instrument(engine=engine)
 
 SessionLocal = sessionmaker(

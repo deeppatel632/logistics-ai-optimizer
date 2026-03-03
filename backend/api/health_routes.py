@@ -1,6 +1,8 @@
+import pybreaker
 from fastapi import APIRouter
-from database.connection import engine
-from sqlalchemy import text
+from fastapi.responses import JSONResponse, Response
+
+from database.connection import safe_db_check
 from backend.core.queue import redis_conn
 
 router = APIRouter()
@@ -8,30 +10,21 @@ router = APIRouter()
 
 @router.get("/health/live")
 def liveness_check():
-    """
-    Basic process check.
-    If this returns, app is alive.
-    """
     return {"status": "alive"}
 
 
 @router.get("/health/ready")
 def readiness_check():
-    """
-    Checks DB and Redis connectivity.
-    """
-
-    # Check DB
     try:
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
+        safe_db_check()
+    except pybreaker.CircuitBreakerError:
+        return JSONResponse(status_code=503, content={"status": "not ready", "detail": "circuit open"})
     except Exception:
-        return {"status": "not ready", "database": "down"}
+        return JSONResponse(status_code=503, content={"status": "not ready", "detail": "database unavailable"})
 
-    # Check Redis
     try:
         redis_conn.ping()
     except Exception:
-        return {"status": "not ready", "redis": "down"}
+        return JSONResponse(status_code=503, content={"status": "not ready", "detail": "redis unavailable"})
 
     return {"status": "ready"}
