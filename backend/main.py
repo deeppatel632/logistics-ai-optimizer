@@ -5,6 +5,7 @@ from backend.api import warehouse_routes
 from database.connection import engine, validate_database_connection
 from database.models import Base
 import uuid
+from backend.api import health_routes
 import time
 
 
@@ -16,7 +17,7 @@ app = FastAPI(
     title="Global Logistics & Supply Chain Optimizer",
     version="1.0.0"
 )
-
+app.include_router(health_routes.router)
 
 # ---------------------------------------------------
 # Startup Event (DB Validation Only)
