@@ -1,16 +1,14 @@
 # database/connection.py
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.exc import OperationalError
 import logging
 import time
-from database.connection import SessionLocal
-from sqlalchemy import event
-from sqlalchemy.orm import with_loader_criteria
-from backend.core.tenant_context import get_current_tenant
-from database.models import Warehouse, Shipment, Product, Vehicle, Inventory
+
+from sqlalchemy import create_engine, event, text
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import declarative_base, sessionmaker, with_loader_criteria
+
 from backend.core.config import get_settings
+from backend.core.tenant_context import get_current_tenant
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -21,16 +19,6 @@ Base = declarative_base()
 # -------------------------------
 # CONNECTION STRING BUILDER
 # -------------------------------
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
 
 def build_connection_string(database_name: str) -> str:
     return (
@@ -103,39 +91,70 @@ def validate_database_connection(engine, retries=5, delay=3):
 
     raise RuntimeError("Database not available after retries.")
 
-@event.listens_for(SessionLocal, "do_orm_execute")
-def _add_tenant_criteria(execute_state):
-
-    if not execute_state.is_select:
-        return
-
-    tenant_id = get_current_tenant()
-
-    if not tenant_id:
-        return
-
-    for model in [Warehouse, Shipment, Product, Vehicle, Inventory]:
-        execute_state.statement = execute_state.statement.options(
-            with_loader_criteria(
-                model,
-                lambda cls: (cls.tenant_id == tenant_id) & (cls.is_deleted == False),
-                include_aliases=True,
-            )
-        )
-
 
 # -------------------------------
-# INITIALIZATION ORDER
+# ENGINE + SESSION FACTORY
 # -------------------------------
-
-
 
 engine = create_engine_with_pool(settings.db_name)
-
-
 
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
-    bind=engine
+    bind=engine,
 )
+
+
+# -------------------------------
+# SESSION DEPENDENCY
+# -------------------------------
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+# -------------------------------
+# TENANT ENFORCEMENT HOOKS
+# -------------------------------
+
+@event.listens_for(SessionLocal, "after_begin")
+def _set_tenant_session_context(
+    session, transaction, connection
+) -> None:
+    tenant_id = get_current_tenant()
+    if tenant_id is not None:
+        connection.exec_driver_sql(
+            "EXEC sp_set_session_context @key=N'tenant_id', @value=?",
+            (tenant_id,),
+        )
+
+
+@event.listens_for(SessionLocal, "do_orm_execute")
+def _add_tenant_filter_criteria(execute_state) -> None:
+    if not execute_state.is_select:
+        return
+
+    tenant_id = get_current_tenant()
+    if tenant_id is None:
+        return
+
+    from database.models import Inventory, Product, Shipment, Vehicle, Warehouse
+
+    for model in (Warehouse, Shipment, Product, Vehicle, Inventory):
+        execute_state.statement = execute_state.statement.options(
+            with_loader_criteria(
+                model,
+                lambda cls, tid=tenant_id: (
+                    (cls.tenant_id == tid) & (cls.is_deleted == False)
+                ),
+                include_aliases=True,
+            )
+        )
