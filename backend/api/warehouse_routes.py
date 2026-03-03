@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from database.connection import get_db
 from backend.schemas import WarehouseCreate, WarehouseResponse
 from backend.services import warehouse_service
+from backend.core.dependencies import get_current_tenant_id
 
 router = APIRouter(prefix="/warehouses", tags=["Warehouses"])
 
@@ -20,11 +21,13 @@ def create(data: WarehouseCreate, db: Session = Depends(get_db)):
 # List Warehouses
 # ---------------------------------------------------
 
-@router.get("/", response_model=list[WarehouseResponse])
-def list_all(db: Session = Depends(get_db)):
-    return warehouse_service.list_warehouses(db)
 
-
+@router.get("/")
+def list_all(
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_current_tenant_id),
+):
+    return warehouse_service.list_warehouses(db, tenant_id)
 # ---------------------------------------------------
 # Get Warehouse
 # ---------------------------------------------------
