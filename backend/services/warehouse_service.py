@@ -1,6 +1,8 @@
 from sqlalchemy.orm import Session
 from database.models import Warehouse
 from backend.schemas import WarehouseCreate
+from datetime import datetime
+
 
 def create_warehouse(db: Session, data: WarehouseCreate):
     warehouse = Warehouse(**data.dict())
@@ -17,5 +19,7 @@ def list_warehouses(db: Session):
 def delete_warehouse(db: Session, warehouse_id: int):
     warehouse = db.query(Warehouse).filter(Warehouse.id == warehouse_id).first()
     if warehouse:
-        db.delete(warehouse)
+        warehouse.is_deleted = True
+        warehouse.deleted_at = datetime.utcnow()
+
     return warehouse

@@ -4,6 +4,7 @@ from database.connection import Base
 from sqlalchemy.orm import relationship
 from passlib.context import CryptContext
 
+
 class Vehicle(Base):
     __tablename__ = "vehicles"
 
