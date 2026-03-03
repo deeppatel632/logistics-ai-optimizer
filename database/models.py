@@ -17,6 +17,12 @@ class Vehicle(Base):
 
     shipments = relationship("Shipment", back_populates="vehicle")
 
+class Tenant(Base):
+    __tablename__ = "tenants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), unique=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 class Product(Base):
     __tablename__ = "products"
 
@@ -67,8 +73,13 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(100), unique=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
-    role = Column(String(50), default="viewer")  # admin, manager, viewer
+    role = Column(String(50), default="viewer")
     is_active = Column(Boolean, default=True)
+
+    # 🔥 Multi-tenant support
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+
+    tenant = relationship("Tenant", back_populates="users")
 class Inventory(Base):
     __tablename__ = "inventory"
 
