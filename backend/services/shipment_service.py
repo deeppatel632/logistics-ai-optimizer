@@ -1,7 +1,7 @@
-from flask import app
+from flask import app, json
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, Request
-from database.models import Shipment
+from database.models import IdempotencyKey, Shipment
 from backend.services.inventory_service import deduct_stock, reserve_inventory
 from backend.services.dispatch_service import get_available_vehicle_for_update
 from backend.core.db_retry import retry_on_deadlock
@@ -14,6 +14,13 @@ import logging
 
 
 logger = logging.getLogger(__name__)
+
+ALLOWED_TRANSITIONS = {
+    "CREATED": ["IN_TRANSIT", "CANCELLED"],
+    "IN_TRANSIT": ["DELIVERED", "CANCELLED"],
+    "DELIVERED": [],
+    "CANCELLED": [],
+}
 
 def update_shipment_status(db: Session, shipment_id: int, new_status: str):
 
@@ -95,21 +102,21 @@ def create_shipment(db: Session, data):
     return shipment
 
 
-def create_shipment_atomic(db: Session, shipment_data):
-    """
-    Atomically:
-    - Lock inventory
-    - Deduct stock
-    - Create shipment
-    - Commit
-    """
+def create_shipment_atomic(db: Session, shipment_data, idem_key: str):
+
+    existing = db.query(IdempotencyKey).filter(
+        IdempotencyKey.key == idem_key
+    ).first()
+
+    if existing:
+        return json.loads(existing.response_payload)
 
     try:
         reserve_inventory(
-            db=db,
-            warehouse_id=shipment_data.warehouse_id,
-            product_id=shipment_data.product_id,
-            quantity=shipment_data.quantity,
+            db,
+            shipment_data.warehouse_id,
+            shipment_data.product_id,
+            shipment_data.quantity,
         )
 
         shipment = Shipment(
@@ -121,12 +128,49 @@ def create_shipment_atomic(db: Session, shipment_data):
         )
 
         db.add(shipment)
+        db.flush()  # important before storing response
+
+        response_data = {
+            "id": shipment.id,
+            "status": shipment.status,
+        }
+
+        db.add(
+            IdempotencyKey(
+                key=idem_key,
+                response_payload=json.dumps(response_data),
+            )
+        )
 
         db.commit()
         db.refresh(shipment)
 
-        return shipment
+        return response_data
 
     except Exception:
         db.rollback()
         raise
+
+
+def update_shipment_status(db: Session, shipment_id: int, new_status: str):
+
+    shipment = db.query(Shipment).filter(
+        Shipment.id == shipment_id
+    ).first()
+
+    if not shipment:
+        raise Exception("Shipment not found.")
+
+    current_status = shipment.status
+
+    if new_status not in ALLOWED_TRANSITIONS.get(current_status, []):
+        raise Exception(
+            f"Invalid status transition from {current_status} to {new_status}"
+        )
+
+    shipment.status = new_status
+
+    db.commit()
+    db.refresh(shipment)
+
+    return shipment

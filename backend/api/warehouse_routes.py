@@ -15,7 +15,13 @@ def create_shipment(
     db: Session = Depends(get_db),
 ):
     return create_shipment_atomic(db, shipment_data)
-
+@router.put("/shipments/{shipment_id}/status")
+def change_status(
+    shipment_id: int,
+    new_status: str,
+    db: Session = Depends(get_db),
+):
+    return update_shipment_status(db, shipment_id, new_status)
 @router.post("/", response_model=WarehouseResponse)
 def create(data: WarehouseCreate, db: Session = Depends(get_db)):
     return warehouse_service.create_warehouse(db, data)
