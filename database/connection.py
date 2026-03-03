@@ -5,7 +5,11 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.exc import OperationalError
 import logging
 import time
-
+from database.connection import SessionLocal
+from sqlalchemy import event
+from sqlalchemy.orm import with_loader_criteria
+from backend.core.tenant_context import get_current_tenant
+from database.models import Warehouse, Shipment, Product, Vehicle, Inventory
 from backend.core.config import get_settings
 
 settings = get_settings()
@@ -99,16 +103,36 @@ def validate_database_connection(engine, retries=5, delay=3):
 
     raise RuntimeError("Database not available after retries.")
 
+@event.listens_for(SessionLocal, "do_orm_execute")
+def _add_tenant_criteria(execute_state):
+
+    if not execute_state.is_select:
+        return
+
+    tenant_id = get_current_tenant()
+
+    if not tenant_id:
+        return
+
+    for model in [Warehouse, Shipment, Product, Vehicle, Inventory]:
+        execute_state.statement = execute_state.statement.options(
+            with_loader_criteria(
+                model,
+                lambda cls: (cls.tenant_id == tenant_id) & (cls.is_deleted == False),
+                include_aliases=True,
+            )
+        )
+
 
 # -------------------------------
 # INITIALIZATION ORDER
 # -------------------------------
 
-ensure_database_exists()
+
 
 engine = create_engine_with_pool(settings.db_name)
 
-validate_database_connection(engine)
+
 
 SessionLocal = sessionmaker(
     autocommit=False,
