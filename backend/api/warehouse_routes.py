@@ -1,10 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from backend.services.shipment_service import create_shipment_atomic
 from database.connection import get_db
-from backend.schemas import WarehouseCreate, WarehouseResponse
+from backend.schemas import ShipmentCreate, WarehouseCreate, WarehouseResponse
 from backend.services import warehouse_service
 
 router = APIRouter(prefix="/warehouses", tags=["Warehouses"])
+
+
+
+@router.post("/shipments")
+def create_shipment(
+    shipment_data: ShipmentCreate,
+    db: Session = Depends(get_db),
+):
+    return create_shipment_atomic(db, shipment_data)
 
 @router.post("/", response_model=WarehouseResponse)
 def create(data: WarehouseCreate, db: Session = Depends(get_db)):
