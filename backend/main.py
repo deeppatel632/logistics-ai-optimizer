@@ -1,11 +1,10 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from backend.core.logger import logger
-from backend.api import warehouse_routes
+from backend.api import warehouse_routes, auth_routes, health_routes
 from database.connection import engine, validate_database_connection
 from database.models import Base
 import uuid
-from backend.api import health_routes
 import time
 from backend.core.limiter import limiter
 from backend.core.metrics import REQUEST_COUNT, REQUEST_LATENCY, ERROR_COUNT
@@ -14,7 +13,6 @@ from fastapi.responses import Response
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from fastapi.responses import JSONResponse
 
 # ---------------------------------------------------
 # Create FastAPI App
@@ -25,6 +23,8 @@ app = FastAPI(
     version="1.0.0"
 )
 app.include_router(health_routes.router)
+app.include_router(warehouse_routes.router)
+app.include_router(auth_routes.router)
 app.state.limiter = limiter
 # ---------------------------------------------------
 # Rate Limiting Middleware
