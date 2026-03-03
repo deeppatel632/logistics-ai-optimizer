@@ -4,6 +4,8 @@ from database.connection import Base
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy import Float
+from sqlalchemy import Boolean
+from passlib.context import CryptContext
 
 class Vehicle(Base):
     __tablename__ = "vehicles"
@@ -61,7 +63,14 @@ class Warehouse(Base):
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
     capacity = Column(Integer, nullable=False)
+class User(Base):
+    __tablename__ = "users"
 
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), unique=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    role = Column(String(50), default="viewer")  # admin, manager, viewer
+    is_active = Column(Boolean, default=True)
 class Inventory(Base):
     __tablename__ = "inventory"
 
