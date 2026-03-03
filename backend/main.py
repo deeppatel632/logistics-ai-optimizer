@@ -7,7 +7,9 @@ from database.models import Base
 import uuid
 from backend.api import health_routes
 import time
-
+from backend.core.metrics import REQUEST_COUNT, REQUEST_LATENCY, ERROR_COUNT
+from prometheus_client import generate_latest
+from fastapi.responses import Response
 
 # ---------------------------------------------------
 # Create FastAPI App
@@ -46,33 +48,45 @@ async def request_logging_middleware(request: Request, call_next):
 
     request_id = str(uuid.uuid4())
     start_time = time.time()
+    method = request.method
+    endpoint = request.url.path
 
-    logger.info(
-        f"[{request_id}] Incoming request: "
-        f"{request.method} {request.url.path}"
-    )
+    logger.info(f"[{request_id}] Incoming request: {method} {endpoint}")
 
     try:
         response = await call_next(request)
 
-        duration = round((time.time() - start_time) * 1000, 2)
+        duration = time.time() - start_time
+
+        REQUEST_COUNT.labels(
+            method=method,
+            endpoint=endpoint,
+            status=response.status_code
+        ).inc()
+
+        REQUEST_LATENCY.labels(
+            method=method,
+            endpoint=endpoint
+        ).observe(duration)
 
         logger.info(
-            f"[{request_id}] Completed in {duration}ms "
+            f"[{request_id}] Completed in {round(duration * 1000, 2)}ms "
             f"| Status {response.status_code}"
         )
 
         return response
 
     except Exception as e:
-        logger.error(
-            f"[{request_id}] Request failed: {str(e)}"
-        )
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Internal Server Error"},
-        )
+        ERROR_COUNT.inc()
+        logger.error(f"[{request_id}] Request failed: {str(e)}")
+        raise
 
+# ---------------------------------------------------
+# Metrics Endpoint
+# ---------------------------------------------------
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type="text/plain")
 
 # ---------------------------------------------------
 # Include Routers
