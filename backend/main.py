@@ -1,55 +1,80 @@
-from fastapi import FastAPI, Depends
-from sqlalchemy.orm import Session
-from database.connection import SessionLocal, engine
-from database.connection import Base
-from sqlalchemy import text
-from database.connection import engine, validate_database_connection
-from database.connection import get_db
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from backend.core.logger import logger
 from backend.api import warehouse_routes
+from database.connection import engine, validate_database_connection
+from database.models import Base
+import uuid
+import time
 
 
+# ---------------------------------------------------
+# Create FastAPI App
+# ---------------------------------------------------
+
+app = FastAPI(
+    title="Global Logistics & Supply Chain Optimizer",
+    version="1.0.0"
+)
 
 
-app = FastAPI(title="Global Logistics Optimizer API")
-
-app.include_router(warehouse_routes.router)
-
-# ---------------------------
-# Database Dependency
-# ---------------------------
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-@app.get("/health/db")
-def db_health(db: Session = Depends(get_db)):
-    return {"db": "connected"}
-
-
-# ---------------------------
-# Startup Event
-# ---------------------------
+# ---------------------------------------------------
+# Startup Event (DB Validation Only)
+# ---------------------------------------------------
 
 @app.on_event("startup")
 def startup_event():
+    """
+    Runs when application starts.
+    Validates DB connection.
+    """
+
+    logger.info("Starting application...")
+
     validate_database_connection(engine)
-    Base.metadata.create_all(bind=engine)
-# ---------------------------
-# Test Route
-# ---------------------------
-@app.get("/health")
-def health_check():
-    return {"status": "API running"}
+
+    logger.info("Application startup complete.")
 
 
-@app.get("/health")
-def health_check():
+# ---------------------------------------------------
+# Request Logging Middleware
+# ---------------------------------------------------
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+
+    request_id = str(uuid.uuid4())
+    start_time = time.time()
+
+    logger.info(
+        f"[{request_id}] Incoming request: "
+        f"{request.method} {request.url.path}"
+    )
+
     try:
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
-        return {"status": "healthy"}
-    except:
-        return {"status": "unhealthy"}
+        response = await call_next(request)
+
+        duration = round((time.time() - start_time) * 1000, 2)
+
+        logger.info(
+            f"[{request_id}] Completed in {duration}ms "
+            f"| Status {response.status_code}"
+        )
+
+        return response
+
+    except Exception as e:
+        logger.error(
+            f"[{request_id}] Request failed: {str(e)}"
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal Server Error"},
+        )
+
+
+# ---------------------------------------------------
+# Include Routers
+# ---------------------------------------------------
+
+app.include_router(warehouse_routes.router)
