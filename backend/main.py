@@ -13,6 +13,7 @@ from fastapi.responses import Response
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from backend.api import audit_routes
 
 # ---------------------------------------------------
 # Create FastAPI App
@@ -24,6 +25,7 @@ app = FastAPI(
 )
 app.include_router(health_routes.router)
 app.include_router(warehouse_routes.router)
+app.include_router(audit_routes.router)
 app.include_router(auth_routes.router)
 app.state.limiter = limiter
 # ---------------------------------------------------

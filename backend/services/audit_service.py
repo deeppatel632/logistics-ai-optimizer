@@ -22,3 +22,26 @@ def log_action(
     )
 
     db.add(audit)
+
+def get_audit_logs(
+    db: Session,
+    entity_type: str | None = None,
+    user_id: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    query = db.query(AuditLog)
+
+    if entity_type:
+        query = query.filter(AuditLog.entity_type == entity_type)
+
+    if user_id:
+        query = query.filter(AuditLog.user_id == user_id)
+
+    return (
+        query
+        .order_by(AuditLog.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
