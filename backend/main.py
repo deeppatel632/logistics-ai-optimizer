@@ -6,6 +6,7 @@ from database.connection import engine, validate_database_connection
 from database.models import Base
 import uuid
 import time
+from backend.core.tenant_middleware import TenantMiddleware
 from backend.core.limiter import limiter
 from backend.core.metrics import REQUEST_COUNT, REQUEST_LATENCY, ERROR_COUNT
 from prometheus_client import generate_latest
@@ -14,6 +15,8 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from backend.api import audit_routes
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from fastapi import Response
 
 # ---------------------------------------------------
 # Create FastAPI App
@@ -26,6 +29,7 @@ app = FastAPI(
 app.include_router(health_routes.router)
 app.include_router(warehouse_routes.router)
 app.include_router(audit_routes.router)
+app.add_middleware(TenantMiddleware)
 app.include_router(auth_routes.router)
 app.state.limiter = limiter
 # ---------------------------------------------------
@@ -67,44 +71,25 @@ def startup_event():
 # ---------------------------------------------------
 # Request Logging Middleware
 # ---------------------------------------------------
-
 @app.middleware("http")
-async def request_logging_middleware(request: Request, call_next):
-
-    request_id = str(uuid.uuid4())
+async def metrics_middleware(request, call_next):
     start_time = time.time()
-    method = request.method
+
+    response = await call_next(request)
+
+    duration = time.time() - start_time
+
     endpoint = request.url.path
 
-    logger.info(f"[{request_id}] Incoming request: {method} {endpoint}")
+    REQUEST_COUNT.labels(
+        method=request.method,
+        endpoint=endpoint,
+        http_status=response.status_code
+    ).inc()
 
-    try:
-        response = await call_next(request)
+    REQUEST_LATENCY.labels(endpoint=endpoint).observe(duration)
 
-        duration = time.time() - start_time
-
-        REQUEST_COUNT.labels(
-            method=method,
-            endpoint=endpoint,
-            status=response.status_code
-        ).inc()
-
-        REQUEST_LATENCY.labels(
-            method=method,
-            endpoint=endpoint
-        ).observe(duration)
-
-        logger.info(
-            f"[{request_id}] Completed in {round(duration * 1000, 2)}ms "
-            f"| Status {response.status_code}"
-        )
-
-        return response
-
-    except Exception as e:
-        ERROR_COUNT.inc()
-        logger.error(f"[{request_id}] Request failed: {str(e)}")
-        raise
+    return response
 
 # ---------------------------------------------------
 # Metrics Endpoint
@@ -118,3 +103,11 @@ def metrics():
 # ---------------------------------------------------
 
 app.include_router(warehouse_routes.router)
+
+@app.get("/health/live")
+def liveness():
+    return {"status": "alive"}
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
