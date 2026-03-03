@@ -1,5 +1,8 @@
 import json
+from typing import Optional
+
 from sqlalchemy.orm import Session
+
 from database.models import AuditLog
 
 
@@ -9,8 +12,8 @@ def log_action(
     action: str,
     entity_type: str,
     entity_id: int,
-    old_value: dict | None,
-    new_value: dict | None,
+    old_value: Optional[dict] = None,
+    new_value: Optional[dict] = None,
 ):
     audit = AuditLog(
         user_id=user_id,
@@ -25,8 +28,8 @@ def log_action(
 
 def get_audit_logs(
     db: Session,
-    entity_type: str | None = None,
-    user_id: int | None = None,
+    entity_type: Optional[str] = None,
+    user_id: Optional[int] = None,
     limit: int = 50,
     offset: int = 0,
 ):

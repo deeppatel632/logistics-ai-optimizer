@@ -1,5 +1,9 @@
-from pydantic import BaseModel, Field
+from __future__ import annotations
+
 from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, Field
 
 
 class ShipmentStatusUpdate(BaseModel):
@@ -18,8 +22,9 @@ class WarehouseResponse(BaseModel):
     longitude: float
     capacity: int
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
+
+
 class ShipmentCreate(BaseModel):
     warehouse_id: int
     product_id: int
@@ -32,8 +37,8 @@ class ShipmentResponse(BaseModel):
     quantity: int
     status: str
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
+
 
 class AuditLogResponse(BaseModel):
     id: int
@@ -41,8 +46,8 @@ class AuditLogResponse(BaseModel):
     action: str
     entity_type: str
     entity_id: int
-    old_value: str | None
-    new_value: str | None
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
     created_at: datetime
 
     model_config = {
