@@ -7,9 +7,14 @@ from database.models import Base
 import uuid
 from backend.api import health_routes
 import time
+from backend.core.limiter import limiter
 from backend.core.metrics import REQUEST_COUNT, REQUEST_LATENCY, ERROR_COUNT
 from prometheus_client import generate_latest
 from fastapi.responses import Response
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
 
 # ---------------------------------------------------
 # Create FastAPI App
@@ -20,6 +25,24 @@ app = FastAPI(
     version="1.0.0"
 )
 app.include_router(health_routes.router)
+app.state.limiter = limiter
+# ---------------------------------------------------
+# Rate Limiting Middleware
+# ---------------------------------------------------
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["100/minute"]
+)
+
+app.state.limiter = limiter
+app.add_exception_handler(
+    RateLimitExceeded,
+    lambda request, exc: JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded"},
+    ),
+)
 
 # ---------------------------------------------------
 # Startup Event (DB Validation Only)
