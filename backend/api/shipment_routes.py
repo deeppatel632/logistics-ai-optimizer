@@ -4,6 +4,7 @@ from database.connection import get_db
 from backend.schemas import ShipmentCreate, ShipmentResponse, ShipmentStatusUpdate
 from backend.services import shipment_service
 from fastapi import Path
+from backend.core.dependencies import get_current_user
 from backend.services.shipment_service import (
     create_shipment_atomic,
     update_shipment_status,
@@ -20,8 +21,10 @@ def change_status(
     shipment_id: int,
     new_status: str,
     db: Session = Depends(get_db),
+    user = Depends(get_current_user)
 ):
-    return update_shipment_status(db, shipment_id, new_status)
+    return update_shipment_status(db, shipment_id, new_status, user)
+
 
 @router.post("/")
 @limiter.limit("20/minute")

@@ -1,10 +1,7 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Float, Boolean
 from datetime import datetime
 from database.connection import Base
-from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship
-from sqlalchemy import Float
-from sqlalchemy import Boolean
 from passlib.context import CryptContext
 
 class Vehicle(Base):
@@ -90,3 +87,19 @@ class Inventory(Base):
 #     status = Column(String(50), default="Available")
 #     current_latitude = Column(Float, nullable=False)
 #     current_longitude = Column(Float, nullable=False)
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    action = Column(String(100), nullable=False)
+
+    entity_type = Column(String(100), nullable=False)  # e.g. Shipment
+    entity_id = Column(Integer, nullable=False)
+
+    old_value = Column(Text, nullable=True)
+    new_value = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
