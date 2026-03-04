@@ -269,7 +269,7 @@ services:
   #     --topic vehicle-location-topic --partitions 6 --replication-factor 1
   # -------------------------------------------------------------------------
   kafka:
-    image: bitnami/kafka:latest
+    image: bitnami/kafka:3.7
     container_name: logistics_kafka
     ports:
       - "9092:9092"     # PLAINTEXT broker — reachable from the host
@@ -322,7 +322,7 @@ services:
   # Change MINIO_ROOT_USER / MINIO_ROOT_PASSWORD via .env.prod.
   # -------------------------------------------------------------------------
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
     container_name: logistics_minio
     command: server /data --console-address ":9001"
     environment:
@@ -365,7 +365,7 @@ services:
   # CPU-only:    the default config below runs on CPU.
   # -------------------------------------------------------------------------
   triton:
-    image: nvcr.io/nvidia/tritonserver:24.01-py3
+    image: nvcr.io/nvidia/tritonserver:24.08-py3
     container_name: logistics_triton
     command: tritonserver --model-repository=/models --log-verbose=1
     volumes:
