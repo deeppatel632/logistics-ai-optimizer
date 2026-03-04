@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from backend.core.dependencies import get_current_tenant_id, get_current_user
@@ -69,6 +69,7 @@ def change_status(
 @router.post("/")
 @limiter.limit("20/minute")
 def create_shipment(
+    request: Request,
     shipment_data: ShipmentCreate,
     idempotency_key: str = Header(..., alias="Idempotency-Key"),
     db: Session = Depends(get_db),
