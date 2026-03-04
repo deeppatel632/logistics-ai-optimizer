@@ -36,14 +36,9 @@ services:
       - logistics_net
     restart: unless-stopped
     healthcheck:
-      # sqlcmd ships inside the Azure SQL Edge image at this path.
-      # $$MSSQL_SA_PASSWORD expands to the container env var at runtime.
-      test:
-        - "CMD-SHELL"
-        - >
-          /opt/mssql-tools/bin/sqlcmd
-          -S localhost -U sa -P "$$MSSQL_SA_PASSWORD"
-          -Q "SELECT 1" -b 2>/dev/null
+      # azure-sql-edge doesn't ship sqlcmd; bash /dev/tcp is the lightest
+      # possible check that 1433 is accepting connections.
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/1433' 2>/dev/null"]
       interval: 15s
       timeout: 10s
       retries: 10
