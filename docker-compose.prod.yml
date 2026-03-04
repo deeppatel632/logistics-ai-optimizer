@@ -1,0 +1,171 @@
+# ---------------------------------------------------------------------------
+# Production compose file.
+# Requires: .env.prod (copy .env.prod.example and fill in real secrets).
+# Run:  docker compose -f docker-compose.prod.yml up --build -d
+# ---------------------------------------------------------------------------
+
+networks:
+  logistics_net:
+    driver: bridge
+
+volumes:
+  sql_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+services:
+
+  # -------------------------------------------------------------------------
+  # Azure SQL Edge
+  # -------------------------------------------------------------------------
+  sql_edge:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    container_name: logistics_sql_edge_prod
+    environment:
+      ACCEPT_EULA: "1"
+      MSSQL_SA_PASSWORD: ${DB_PASSWORD}
+      MSSQL_PID: Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sql_data:/var/opt/mssql
+    networks:
+      - logistics_net
+    restart: unless-stopped
+    healthcheck:
+      # sqlcmd ships inside the Azure SQL Edge image at this path.
+      # $$MSSQL_SA_PASSWORD expands to the container env var at runtime.
+      test:
+        - "CMD-SHELL"
+        - >
+          /opt/mssql-tools/bin/sqlcmd
+          -S localhost -U sa -P "$$MSSQL_SA_PASSWORD"
+          -Q "SELECT 1" -b 2>/dev/null
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s   # SQL Edge needs ~40-60 s to initialise
+
+  # -------------------------------------------------------------------------
+  # Redis
+  # -------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: logistics_redis_prod
+    # Persistence (AOF) + sensible memory cap for a shared host
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - logistics_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------------------------
+  # FastAPI application
+  # -------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: logistics_api_prod
+    env_file:
+      - .env.prod          # all 22 Settings fields — see .env.prod.example
+    ports:
+      - "8000:8000"
+    depends_on:
+      sql_edge:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - logistics_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  # -------------------------------------------------------------------------
+  # OpenTelemetry Collector
+  # -------------------------------------------------------------------------
+  otel_collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: logistics_otel_collector_prod
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4318:4318"   # OTLP HTTP
+      - "4317:4317"   # OTLP gRPC
+      - "8889:8889"   # Prometheus scrape endpoint for OTEL metrics
+    networks:
+      - logistics_net
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # -------------------------------------------------------------------------
+  # Prometheus
+  # -------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: logistics_prometheus_prod
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - logistics_net
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # -------------------------------------------------------------------------
+  # Grafana
+  # -------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    container_name: logistics_grafana_prod
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "http://localhost:3000"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - logistics_net
+    restart: unless-stopped
+    depends_on:
+      - prometheus
