@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Shipments{% endblock %}
+{% block page_title %}📦 Shipment Management{% endblock %}
+
+{% block content %}
+
+<!-- ── Create shipment form ──────────────────────────────────────── -->
+<div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+  <h2 class="text-sm font-semibold text-gray-300 mb-4">+ New Shipment</h2>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div>
+      <label class="text-xs text-gray-400 block mb-1">Warehouse ID</label>
+      <input id="f-wh" type="number" placeholder="1"
+             class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100
+                    focus:outline-none focus:ring-1 focus:ring-blue-500" />
+    </div>
+    <div>
+      <label class="text-xs text-gray-400 block mb-1">Product ID</label>
+      <input id="f-prod" type="number" placeholder="1"
+             class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100
+                    focus:outline-none focus:ring-1 focus:ring-blue-500" />
+    </div>
+    <div>
+      <label class="text-xs text-gray-400 block mb-1">Quantity</label>
+      <input id="f-qty" type="number" placeholder="100"
+             class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100
+                    focus:outline-none focus:ring-1 focus:ring-blue-500" />
+    </div>
+    <div class="flex items-end">
+      <button onclick="createShipment()"
+              class="w-full bg-blue-700 hover:bg-blue-600 text-white text-sm font-medium rounded py-2 transition">
+        Create →
+      </button>
+    </div>
+  </div>
+  <p id="create-status" class="text-xs mt-2 text-gray-500"></p>
+</div>
+
+<!-- ── Filter bar ─────────────────────────────────────────────────── -->
+<div class="flex items-center gap-3 mb-4">
+  <label class="text-xs text-gray-400 uppercase tracking-wider">Filter:</label>
+  <select id="status-filter" onchange="applyFilter()"
+          class="bg-gray-800 border border-gray-700 text-sm text-gray-200 rounded px-3 py-1.5
+                 focus:outline-none focus:ring-1 focus:ring-blue-500">
+    <option value="">All Statuses</option>
+    <option value="Pending">Pending</option>
+    <option value="InTransit">In Transit</option>
+    <option value="Delivered">Delivered</option>
+    <option value="Cancelled">Cancelled</option>
+  </select>
+  <button onclick="refreshShipments()"
+          class="ml-auto text-xs text-blue-400 hover:text-blue-300 transition">⟳ Refresh</button>
+</div>
+
+<!-- ── Shipments table ────────────────────────────────────────────── -->
+<div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm text-left">
+      <thead class="text-xs text-gray-400 uppercase tracking-wider border-b border-gray-800">
+        <tr>
+          <th class="px-4 py-3">ID</th>
+          <th class="px-4 py-3">Warehouse</th>
+          <th class="px-4 py-3">Product</th>
+          <th class="px-4 py-3">Vehicle</th>
+          <th class="px-4 py-3">Qty</th>
+          <th class="px-4 py-3">Status</th>
+        </tr>
+      </thead>
+      <tbody id="shipment-table" class="text-gray-300 divide-y divide-gray-800/50">
+        <tr><td colspan="6" class="px-4 py-6 text-gray-500">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p class="text-xs text-gray-600 mt-3" id="shipment-count"></p>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allShipments = [];
+
+const statusStyle = {
+  Pending:   'bg-yellow-900/50 text-yellow-300',
+  InTransit: 'bg-blue-900/50 text-blue-300',
+  Delivered: 'bg-green-900/50 text-green-300',
+  Cancelled: 'bg-red-900/50 text-red-300',
+};
+
+function renderTable(rows) {
+  const tbody = document.getElementById('shipment-table');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-gray-500">No shipments match.</td></tr>';
+    document.getElementById('shipment-count').textContent = '';
+    return;
+  }
+  tbody.innerHTML = rows.map(s => `
+    <tr>
+      <td class="px-4 py-3 text-gray-500 font-mono">#${s.id}</td>
+      <td class="px-4 py-3">${s.warehouse_id}</td>
+      <td class="px-4 py-3">${s.product_id}</td>
+      <td class="px-4 py-3">${s.vehicle_id ?? '<span class="text-gray-600">—</span>'}</td>
+      <td class="px-4 py-3">${s.quantity}</td>
+      <td class="px-4 py-3">
+        <span class="px-2 py-0.5 rounded text-xs ${statusStyle[s.status] || 'text-gray-400'}">
+          ${s.status}
+        </span>
+      </td>
+    </tr>
+  `).join('');
+  document.getElementById('shipment-count').textContent = `Showing ${rows.length} shipment(s)`;
+}
+
+function applyFilter() {
+  const filter = document.getElementById('status-filter').value;
+  renderTable(filter ? allShipments.filter(s => s.status === filter) : allShipments);
+}
+
+async function refreshShipments() {
+  try {
+    const r = await fetch('/api/shipments');
+    const data = await r.json();
+    allShipments = Array.isArray(data) ? data : [];
+    applyFilter();
+  } catch(e) {
+    document.getElementById('shipment-table').innerHTML =
+      '<tr><td colspan="6" class="px-4 py-6 text-red-400">Failed to load shipments.</td></tr>';
+  }
+}
+
+async function createShipment() {
+  const wh   = parseInt(document.getElementById('f-wh').value);
+  const prod = parseInt(document.getElementById('f-prod').value);
+  const qty  = parseInt(document.getElementById('f-qty').value);
+  const statusEl = document.getElementById('create-status');
+
+  if (!wh || !prod || !qty) {
+    statusEl.textContent = '⚠ All fields required.'; return;
+  }
+  try {
+    const r = await fetch('/api/shipments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ warehouse_id: wh, product_id: prod, quantity: qty }),
+    });
+    if (r.ok) {
+      statusEl.className = 'text-xs mt-2 text-green-400';
+      statusEl.textContent = '✅ Shipment created.';
+      refreshShipments();
+    } else {
+      const err = await r.json();
+      statusEl.className = 'text-xs mt-2 text-red-400';
+      statusEl.textContent = `Error: ${err.detail || err.error || r.status}`;
+    }
+  } catch(e) {
+    statusEl.textContent = '❌ Network error.';
+  }
+  setTimeout(() => { statusEl.textContent = ''; }, 4000);
+}
+
+refreshShipments();
+setInterval(refreshShipments, 20_000);
+</script>
+{% endblock %}

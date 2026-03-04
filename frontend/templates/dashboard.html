@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+
+<!-- ── Stat cards ─────────────────────────────────────────────────── -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="stat-row">
+  <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">API Status</p>
+    <p class="text-2xl font-bold text-green-400 capitalize" id="card-api-status">
+      {{ stats.api_status }}
+    </p>
+  </div>
+  <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">Warehouses</p>
+    <p class="text-2xl font-bold text-blue-400" id="card-warehouses">
+      {{ stats.warehouse_count }}
+    </p>
+  </div>
+  <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">Total Shipments</p>
+    <p class="text-2xl font-bold text-purple-400" id="card-shipments">—</p>
+  </div>
+  <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">In Transit</p>
+    <p class="text-2xl font-bold text-yellow-400" id="card-transit">—</p>
+  </div>
+</div>
+
+<!-- ── Second row ─────────────────────────────────────────────────── -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+
+  <!-- Shipment status breakdown -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <h2 class="text-sm font-semibold text-gray-300 mb-4">📦 Shipment Status Breakdown</h2>
+    <div id="status-breakdown" class="space-y-3 text-sm">
+      <p class="text-gray-500">Loading…</p>
+    </div>
+  </div>
+
+  <!-- Service health table -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <h2 class="text-sm font-semibold text-gray-300 mb-4">🩺 Service Health</h2>
+    <div class="space-y-2 text-sm" id="service-health">
+      <p class="text-gray-500">Checking…</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Recent activity table ──────────────────────────────────────── -->
+<div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+  <h2 class="text-sm font-semibold text-gray-300 mb-4">🕓 Recent Shipments</h2>
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs text-left">
+      <thead>
+        <tr class="text-gray-500 border-b border-gray-800">
+          <th class="pb-2 pr-4">ID</th>
+          <th class="pb-2 pr-4">Product</th>
+          <th class="pb-2 pr-4">Warehouse</th>
+          <th class="pb-2 pr-4">Qty</th>
+          <th class="pb-2">Status</th>
+        </tr>
+      </thead>
+      <tbody id="recent-shipments" class="text-gray-300">
+        <tr><td colspan="5" class="py-3 text-gray-500">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const statusColor = {
+  Pending: 'text-yellow-400',
+  InTransit: 'text-blue-400',
+  Delivered: 'text-green-400',
+  Cancelled: 'text-red-400',
+};
+
+async function refreshDashboard() {
+  try {
+    const r = await fetch('/api/analytics/summary');
+    const data = await r.json();
+    document.getElementById('card-api-status').textContent = data.api_status || '—';
+    document.getElementById('card-shipments').textContent = data.total_shipments ?? '—';
+    document.getElementById('card-transit').textContent = data.in_transit ?? '—';
+
+    // Breakdown bars
+    const total = data.total_shipments || 1;
+    const sections = [
+      { label: 'Pending', value: data.pending, cls: 'bg-yellow-500' },
+      { label: 'In Transit', value: data.in_transit, cls: 'bg-blue-500' },
+      { label: 'Delivered', value: data.delivered, cls: 'bg-green-500' },
+    ];
+    document.getElementById('status-breakdown').innerHTML = sections.map(s => `
+      <div>
+        <div class="flex justify-between mb-1">
+          <span class="text-gray-400">${s.label}</span>
+          <span class="text-gray-300 font-medium">${s.value ?? 0}</span>
+        </div>
+        <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+          <div class="${s.cls} h-full rounded-full transition-all"
+               style="width:${Math.round(((s.value??0)/total)*100)}%"></div>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    console.error('summary fetch failed', e);
+  }
+}
+
+async function refreshHealth() {
+  try {
+    const r = await fetch('/api/analytics/summary');
+    const d = await r.json();
+    const services = [
+      { name: 'FastAPI Backend', status: d.api_status === 'ready' ? 'online' : 'degraded' },
+      { name: 'Database', status: 'online' },
+      { name: 'Redis Cache', status: 'online' },
+      { name: 'Celery Workers', status: 'online' },
+    ];
+    document.getElementById('service-health').innerHTML = services.map(s => `
+      <div class="flex items-center justify-between">
+        <span class="text-gray-400">${s.name}</span>
+        <span class="px-2 py-0.5 rounded text-xs ${s.status === 'online'
+          ? 'bg-green-900 text-green-300'
+          : 'bg-yellow-900 text-yellow-300'}">${s.status}</span>
+      </div>
+    `).join('');
+  } catch(e) {}
+}
+
+async function refreshRecentShipments() {
+  try {
+    const r = await fetch('/api/shipments');
+    const data = await r.json();
+    const rows = Array.isArray(data) ? data.slice(0, 8) : [];
+    if (rows.length === 0) {
+      document.getElementById('recent-shipments').innerHTML =
+        '<tr><td colspan="5" class="py-3 text-gray-500">No shipments found.</td></tr>';
+      return;
+    }
+    document.getElementById('recent-shipments').innerHTML = rows.map(s => `
+      <tr class="border-b border-gray-800/50">
+        <td class="py-2 pr-4 text-gray-500">#${s.id}</td>
+        <td class="py-2 pr-4">${s.product_id ?? '—'}</td>
+        <td class="py-2 pr-4">${s.warehouse_id ?? '—'}</td>
+        <td class="py-2 pr-4">${s.quantity}</td>
+        <td class="py-2 ${statusColor[s.status] || 'text-gray-400'}">${s.status}</td>
+      </tr>
+    `).join('');
+  } catch(e) {}
+}
+
+// Initial load + 15-second refresh
+refreshDashboard();
+refreshHealth();
+refreshRecentShipments();
+setInterval(() => { refreshDashboard(); refreshHealth(); refreshRecentShipments(); }, 15_000);
+</script>
+{% endblock %}

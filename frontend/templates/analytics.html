@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Analytics{% endblock %}
+{% block page_title %}📊 Analytics Dashboard{% endblock %}
+
+{% block head_extra %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── KPI cards ──────────────────────────────────────────────────── -->
+<div id="kpi-row" class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">Total Shipments</p>
+    <p class="text-3xl font-bold text-blue-400" id="kpi-total">—</p>
+  </div>
+  <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">Delivered</p>
+    <p class="text-3xl font-bold text-green-400" id="kpi-delivered">—</p>
+  </div>
+  <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">In Transit</p>
+    <p class="text-3xl font-bold text-yellow-400" id="kpi-transit">—</p>
+  </div>
+  <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">Delivery Rate</p>
+    <p class="text-3xl font-bold text-purple-400" id="kpi-rate">—</p>
+  </div>
+</div>
+
+<!-- ── Charts row ─────────────────────────────────────────────────── -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+
+  <!-- Shipment status distribution (doughnut) -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <h2 class="text-sm font-semibold text-gray-300 mb-4">Shipment Status Distribution</h2>
+    <div class="relative h-56">
+      <canvas id="statusChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Simulated 14-day throughput (bar chart) -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+    <h2 class="text-sm font-semibold text-gray-300 mb-4">Throughput — Last 14 Days</h2>
+    <div class="relative h-56">
+      <canvas id="throughputChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ── Warehouse utilisation chart ───────────────────────────────── -->
+<div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+  <h2 class="text-sm font-semibold text-gray-300 mb-4">Warehouse Utilisation</h2>
+  <div class="relative h-44">
+    <canvas id="warehouseChart"></canvas>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Chart.js defaults ─────────────────────────────────────────────
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = '#1e293b';
+
+let statusChart, throughputChart, warehouseChart;
+
+function buildStatusChart(data) {
+  const ctx = document.getElementById('statusChart').getContext('2d');
+  if (statusChart) statusChart.destroy();
+  statusChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Pending', 'In Transit', 'Delivered', 'Cancelled'],
+      datasets: [{
+        data: [data.pending, data.in_transit, data.delivered,
+               (data.total_shipments - data.pending - data.in_transit - data.delivered)],
+        backgroundColor: ['#854d0e', '#1d4ed8', '#14532d', '#7f1d1d'],
+        borderColor: ['#f59e0b', '#3b82f6', '#22c55e', '#ef4444'],
+        borderWidth: 1.5,
+      }],
+    },
+    options: {
+      cutout: '65%',
+      plugins: { legend: { position: 'right', labels: { boxWidth: 10, padding: 12 } } },
+    },
+  });
+}
+
+function buildThroughputChart() {
+  const ctx = document.getElementById('throughputChart').getContext('2d');
+  if (throughputChart) throughputChart.destroy();
+  // Simulated daily throughput — replace with real API data when available
+  const labels = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - 13 + i);
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  });
+  const values = labels.map(() => Math.floor(Math.random() * 60) + 20);
+  throughputChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Shipments',
+        data: values,
+        backgroundColor: 'rgba(59,130,246,0.4)',
+        borderColor: '#3b82f6',
+        borderWidth: 1,
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#1e293b' } },
+        y: { grid: { color: '#1e293b' }, beginAtZero: true },
+      },
+    },
+  });
+}
+
+async function buildWarehouseChart() {
+  const ctx = document.getElementById('warehouseChart').getContext('2d');
+  if (warehouseChart) warehouseChart.destroy();
+
+  let labels = [], capacities = [];
+  try {
+    const r = await fetch('/api/warehouses');
+    const wh = await r.json();
+    if (Array.isArray(wh)) {
+      labels     = wh.map(w => w.name);
+      capacities = wh.map(w => w.capacity);
+    }
+  } catch(e) {
+    labels = ['W-1', 'W-2', 'W-3'];
+    capacities = [500, 800, 350];
+  }
+
+  warehouseChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Capacity',
+        data: capacities,
+        backgroundColor: 'rgba(168,85,247,0.4)',
+        borderColor: '#a855f7',
+        borderWidth: 1,
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#1e293b' }, beginAtZero: true },
+        y: { grid: { display: false } },
+      },
+    },
+  });
+}
+
+async function refreshKPIs() {
+  try {
+    const r = await fetch('/api/analytics/summary');
+    const d = await r.json();
+
+    document.getElementById('kpi-total').textContent     = d.total_shipments ?? '—';
+    document.getElementById('kpi-delivered').textContent = d.delivered ?? '—';
+    document.getElementById('kpi-transit').textContent   = d.in_transit ?? '—';
+
+    const rate = d.total_shipments > 0
+      ? Math.round((d.delivered / d.total_shipments) * 100) + '%'
+      : '—';
+    document.getElementById('kpi-rate').textContent = rate;
+
+    buildStatusChart(d);
+  } catch(e) { console.error('KPI fetch failed', e); }
+}
+
+// Init
+refreshKPIs();
+buildThroughputChart();
+buildWarehouseChart();
+setInterval(refreshKPIs, 30_000);
+</script>
+{% endblock %}

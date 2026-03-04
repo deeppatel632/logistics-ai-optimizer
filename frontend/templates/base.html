@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Logistics AI{% endblock %} — Logistics AI Optimizer</title>
+
+  <!-- Tailwind CSS CDN (no build step needed) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet CSS (loaded on pages that use maps) -->
+  {% block head_extra %}{% endblock %}
+
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .sidebar-link.active {
+      background: rgba(255,255,255,0.15);
+      border-left: 3px solid #60a5fa;
+    }
+    .stat-card { transition: transform 0.15s ease; }
+    .stat-card:hover { transform: translateY(-2px); }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex">
+
+  <!-- ─── Sidebar ───────────────────────────────────────────────────── -->
+  <aside class="w-56 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0 min-h-screen">
+    <div class="px-5 py-6 border-b border-gray-800">
+      <span class="text-blue-400 font-bold text-lg tracking-tight">⚡ LogisticsAI</span>
+    </div>
+
+    <nav class="flex-1 px-2 py-4 space-y-1 text-sm">
+      <a href="/dashboard"
+         class="sidebar-link flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-800 transition
+                {% if request.path == '/dashboard' %}active{% endif %}">
+        <span>🏠</span> Dashboard
+      </a>
+      <a href="/vehicles"
+         class="sidebar-link flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-800 transition
+                {% if request.path == '/vehicles' %}active{% endif %}">
+        <span>🚛</span> Vehicles
+      </a>
+      <a href="/shipments"
+         class="sidebar-link flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-800 transition
+                {% if request.path == '/shipments' %}active{% endif %}">
+        <span>📦</span> Shipments
+      </a>
+      <a href="/inventory"
+         class="sidebar-link flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-800 transition
+                {% if request.path == '/inventory' %}active{% endif %}">
+        <span>🏭</span> Inventory
+      </a>
+      <a href="/analytics"
+         class="sidebar-link flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-800 transition
+                {% if request.path == '/analytics' %}active{% endif %}">
+        <span>📊</span> Analytics
+      </a>
+    </nav>
+
+    <!-- User info + logout -->
+    <div class="px-4 py-4 border-t border-gray-800 text-xs text-gray-400">
+      <div class="mb-2 truncate">👤 {{ username | default(session.get('username', '—')) }}</div>
+      <a href="/logout" class="text-red-400 hover:text-red-300 transition">⏏ Logout</a>
+    </div>
+  </aside>
+
+  <!-- ─── Main content ─────────────────────────────────────────────── -->
+  <main class="flex-1 flex flex-col min-h-screen">
+    <!-- Top bar -->
+    <header class="h-14 bg-gray-900 border-b border-gray-800 flex items-center px-6 gap-4 shrink-0">
+      <h1 class="text-sm font-semibold text-gray-200 flex-1">{% block page_title %}{% endblock %}</h1>
+      <span id="clock" class="text-xs text-gray-500"></span>
+      <span class="text-xs px-2 py-1 rounded bg-green-900 text-green-300">Live</span>
+    </header>
+
+    <!-- Page body -->
+    <div class="flex-1 p-6 overflow-auto">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <!-- Clock script -->
+  <script>
+    function tick() {
+      document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+    }
+    tick();
+    setInterval(tick, 1000);
+  </script>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

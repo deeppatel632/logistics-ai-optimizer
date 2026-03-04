@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Login — Logistics AI Optimizer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex items-center justify-center">
+  <div class="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-xl shadow-2xl p-8">
+
+    <!-- Logo / branding -->
+    <div class="text-center mb-8">
+      <div class="text-4xl mb-3">⚡</div>
+      <h1 class="text-xl font-bold tracking-tight text-white">Logistics AI Optimizer</h1>
+      <p class="text-gray-400 text-sm mt-1">Sign in to your workspace</p>
+    </div>
+
+    <!-- Error banner -->
+    {% if error %}
+    <div class="bg-red-900/40 border border-red-700 text-red-300 text-sm px-4 py-3 rounded-lg mb-6">
+      ⚠️ {{ error }}
+    </div>
+    {% endif %}
+
+    <!-- Login form -->
+    <form method="POST" action="/login" class="space-y-5">
+      <div>
+        <label for="username" class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">
+          Username
+        </label>
+        <input
+          id="username" name="username" type="text" required autocomplete="username"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5
+                 text-sm text-gray-100 placeholder-gray-500
+                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                 transition"
+          placeholder="admin"
+        />
+      </div>
+
+      <div>
+        <label for="password" class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">
+          Password
+        </label>
+        <input
+          id="password" name="password" type="password" required autocomplete="current-password"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5
+                 text-sm text-gray-100 placeholder-gray-500
+                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                 transition"
+          placeholder="••••••••"
+        />
+      </div>
+
+      <button
+        type="submit"
+        class="w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700
+               text-white font-semibold py-2.5 rounded-lg text-sm transition"
+      >
+        Sign In →
+      </button>
+    </form>
+
+    <p class="text-center text-xs text-gray-600 mt-8">
+      Multi-tenant · JWT secured · v1.0
+    </p>
+  </div>
+</body>
+</html>

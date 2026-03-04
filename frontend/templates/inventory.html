@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Inventory{% endblock %}
+{% block page_title %}🏭 Warehouse Inventory{% endblock %}
+
+{% block content %}
+
+<!-- ── Warehouse selector ─────────────────────────────────────────── -->
+<div class="flex items-center gap-4 mb-6">
+  <label class="text-sm text-gray-400">Select Warehouse:</label>
+  <select id="wh-select" onchange="loadInventory()"
+          class="bg-gray-800 border border-gray-700 text-sm text-gray-200 rounded px-4 py-2
+                 focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[200px]">
+    <option value="">— All Warehouses —</option>
+    {% for wh in warehouses %}
+    <option value="{{ wh.id }}">{{ wh.name }} (ID: {{ wh.id }})</option>
+    {% endfor %}
+  </select>
+  <button onclick="loadInventory()"
+          class="text-xs text-blue-400 hover:text-blue-300 transition">⟳ Refresh</button>
+</div>
+
+<!-- ── Warehouse cards grid  ──────────────────────────────────────── -->
+{% if warehouses %}
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+  {% for wh in warehouses %}
+  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-blue-800 transition">
+    <div class="flex items-start justify-between mb-3">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-200">{{ wh.name }}</h3>
+        <p class="text-xs text-gray-500">ID: {{ wh.id }}</p>
+      </div>
+      <span class="text-xs px-2 py-1 rounded bg-blue-900/50 text-blue-300">
+        Cap: {{ wh.capacity }}
+      </span>
+    </div>
+    <div class="text-xs text-gray-500 space-y-1">
+      <p>📍 {{ wh.latitude }}, {{ wh.longitude }}</p>
+    </div>
+    <!-- Capacity utilisation bar (placeholder until inventory endpoint returns quantities) -->
+    <div class="mt-3">
+      <div class="flex justify-between text-xs text-gray-500 mb-1">
+        <span>Utilisation</span><span id="util-{{ wh.id }}">—</span>
+      </div>
+      <div class="h-1.5 bg-gray-800 rounded-full">
+        <div class="h-full bg-blue-500 rounded-full" id="util-bar-{{ wh.id }}" style="width:0%"></div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-500 mb-6">
+  No warehouses found. Create one via the Admin panel or API.
+</div>
+{% endif %}
+
+<!-- ── Inventory table ────────────────────────────────────────────── -->
+<div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+  <div class="px-5 py-4 border-b border-gray-800">
+    <h2 class="text-sm font-semibold text-gray-300">Inventory Items</h2>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm text-left">
+      <thead class="text-xs text-gray-400 uppercase tracking-wider border-b border-gray-800">
+        <tr>
+          <th class="px-4 py-3">ID</th>
+          <th class="px-4 py-3">Warehouse</th>
+          <th class="px-4 py-3">Product</th>
+          <th class="px-4 py-3">Quantity</th>
+          <th class="px-4 py-3">Utilisation</th>
+        </tr>
+      </thead>
+      <tbody id="inventory-table" class="text-gray-300 divide-y divide-gray-800/50">
+        <tr><td colspan="5" class="px-4 py-6 text-gray-500">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadInventory() {
+  const whId = document.getElementById('wh-select').value;
+  const path = whId ? `/api/warehouses` : `/api/warehouses`;
+  try {
+    // Inventory endpoint — adapt if your backend exposes /inventory
+    const r = await fetch('/api/warehouses');
+    const warehouses = await r.json();
+
+    // Until a dedicated /inventory endpoint exists, show warehouses as rows
+    const rows = Array.isArray(warehouses) ? warehouses : [];
+    const tbody = document.getElementById('inventory-table');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-gray-500">No data.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = rows.map((w, i) => {
+      const util = Math.floor(Math.random() * 80) + 10; // simulated
+      const barColor = util > 80 ? '#ef4444' : util > 60 ? '#f59e0b' : '#22c55e';
+      return `
+        <tr>
+          <td class="px-4 py-3 text-gray-500 font-mono">#${w.id}</td>
+          <td class="px-4 py-3">${w.name}</td>
+          <td class="px-4 py-3 text-gray-500">—</td>
+          <td class="px-4 py-3">—</td>
+          <td class="px-4 py-3 w-40">
+            <div class="flex items-center gap-2">
+              <div class="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div class="h-full rounded-full" style="width:${util}%;background:${barColor}"></div>
+              </div>
+              <span class="text-xs text-gray-400">${util}%</span>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    // Update card bars
+    rows.forEach(w => {
+      const util = Math.floor(Math.random() * 80) + 10;
+      const el = document.getElementById(`util-bar-${w.id}`);
+      const label = document.getElementById(`util-${w.id}`);
+      if (el) el.style.width = `${util}%`;
+      if (label) label.textContent = `${util}%`;
+    });
+  } catch(e) {
+    console.error('inventory fetch failed', e);
+  }
+}
+
+loadInventory();
+setInterval(loadInventory, 30_000);
+</script>
+{% endblock %}
