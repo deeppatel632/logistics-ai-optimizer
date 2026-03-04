@@ -9,11 +9,15 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 @router.post("/register")
-def register(username: str, password: str, db: Session = Depends(get_db)):
+def register(username: str, password: str, tenant_id: int = 1, db: Session = Depends(get_db)):
+    existing = db.query(User).filter(User.username == username).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already taken")
     user = User(
         username=username,
         hashed_password=hash_password(password),
-        role="viewer"
+        role="viewer",
+        tenant_id=tenant_id,
     )
     db.add(user)
     db.commit()

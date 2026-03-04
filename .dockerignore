@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Virtual environment — never copy into the image
+venv/
+.venv/
+env/
+
+# Git
+.git/
+.gitignore
+
+# ML training artefacts — large files not needed at API runtime
+ml_engine/models/*.pkl
+ml_engine/models/*.joblib
+ml_engine/models/*.h5
+ml_engine/models/*.onnx
+ml_engine/training/
+
+# Test / dev tooling
+tests/
+locustfile.py
+*.locustfile
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Docs
+docs/
+*.md
+
+# Logs / temp
+*.log
+*.tmp
+tmp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker files themselves (already loaded by daemon)
+.dockerignore
+docker-compose*.yml
