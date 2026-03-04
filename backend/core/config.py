@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     redis_port: int
     redis_db: int
 
+    # Kafka
+    # Default targets the service name defined in docker-compose.prod.yml.
+    # Override via KAFKA_BOOTSTRAP_SERVERS env var for other environments.
+    kafka_bootstrap_servers: str = "kafka:9092"
+
     # JWT
     jwt_secret: str
     jwt_algorithm: str
@@ -37,7 +42,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
-        extra = "forbid"   # strict mode
+        extra = "ignore"   # allow extra env vars we don't own (e.g. PATH)
 
 
 @lru_cache()

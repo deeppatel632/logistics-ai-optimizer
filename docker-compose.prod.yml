@@ -13,6 +13,7 @@ volumes:
   redis_data:
   prometheus_data:
   grafana_data:
+  kafka_data:
 
 services:
 
@@ -88,6 +89,8 @@ services:
       sql_edge:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     networks:
       - logistics_net
@@ -248,21 +251,57 @@ services:
         condition: service_started
 
   # -------------------------------------------------------------------------
-  # Kafka (KRaft mode — no ZooKeeper)
+  # Kafka (KRaft mode — no ZooKeeper).
+  #
+  # KRaft removes the ZooKeeper dependency introduced in Kafka 3.x.
+  # The broker and controller roles both run in this single container,
+  # making it ideal for single-node development and CI.
+  #
+  # For production, replace with a 3-node cluster or a managed service
+  # (Confluent Cloud, AWS MSK, Azure Event Hubs with Kafka API).
+  #
+  # Topics are created automatically on first publish
+  # (KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true, the default).
+  # Pre-create topics with specific partition counts via:
+  #   docker exec logistics_kafka kafka-topics.sh \
+  #     --bootstrap-server localhost:9092 --create \
+  #     --topic vehicle-location-topic --partitions 6 --replication-factor 1
   # -------------------------------------------------------------------------
   kafka:
     image: bitnami/kafka:latest
     container_name: logistics_kafka
     ports:
-      - "9092:9092"
+      - "9092:9092"     # PLAINTEXT broker — reachable from the host
     environment:
+      # KRaft identity
       - KAFKA_CFG_NODE_ID=0
       - KAFKA_CFG_PROCESS_ROLES=controller,broker
       - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
+      # Listeners
+      # PLAINTEXT  — for other containers on logistics_net (kafka:9092)
+      # CONTROLLER — internal KRaft controller port (not exposed)
       - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
       - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
       - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - ALLOW_PLAINTEXT_LISTENER=yes
+      # Retention — keep messages for 24 h in this dev cluster.
+      # Increase for production (e.g. 168h = 7 days).
+      - KAFKA_CFG_LOG_RETENTION_HOURS=24
+      - KAFKA_CFG_LOG_RETENTION_BYTES=536870912   # 512 MB per partition
+    volumes:
+      - kafka_data:/bitnami/kafka
     networks:
       - logistics_net
     restart: unless-stopped
+    healthcheck:
+      # Attempt to list topics — succeeds once the broker is fully ready.
+      test:
+        - "CMD-SHELL"
+        - >
+          kafka-topics.sh --bootstrap-server localhost:9092 --list
+          > /dev/null 2>&1
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s

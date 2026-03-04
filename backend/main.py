@@ -12,7 +12,8 @@ from backend.core.rate_limiter import limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi import _rate_limit_exceeded_handler
-from backend.api import audit_routes, auth_routes, health_routes, warehouse_routes, worker_routes
+from backend.api import audit_routes, auth_routes, health_routes, streaming_routes, warehouse_routes, worker_routes
+from backend.streaming.kafka_producer import close_producer
 from backend.core.logging_config import configure_logging
 from backend.core.metrics import REQUEST_COUNT, REQUEST_LATENCY
 from backend.core.tenant_middleware import TenantMiddleware
@@ -58,6 +59,7 @@ app.include_router(auth_routes.router)
 app.include_router(warehouse_routes.router)
 app.include_router(audit_routes.router)
 app.include_router(worker_routes.router)
+app.include_router(streaming_routes.router)
 
 
 # ---------------------------------------------------
@@ -68,6 +70,13 @@ app.include_router(worker_routes.router)
 def startup_event() -> None:
     validate_database_connection(engine)
     logger.info("application_started")
+
+
+@app.on_event("shutdown")
+def shutdown_event() -> None:
+    # Flush any buffered Kafka messages before the process exits.
+    close_producer()
+    logger.info("application_stopped")
 
 
 # ---------------------------------------------------
