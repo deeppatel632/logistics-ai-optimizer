@@ -1,95 +1,117 @@
+# backend/main.py
+
+import logging
+import time
+import uuid
+from typing import Callable
+
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from backend.core.logger import logger
-from backend.api import warehouse_routes
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from backend.core.rate_limiter import limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
+from backend.api import audit_routes, auth_routes, health_routes, warehouse_routes
+from backend.core.logging_config import configure_logging
+from backend.core.metrics import ERROR_COUNT, REQUEST_COUNT, REQUEST_LATENCY
+from backend.core.tenant_middleware import TenantMiddleware
+from backend.core.tracing import configure_tracing
 from database.connection import engine, validate_database_connection
 from database.models import Base
-import uuid
-from backend.api import health_routes
-import time
-from backend.core.metrics import REQUEST_COUNT, REQUEST_LATENCY, ERROR_COUNT
-from prometheus_client import generate_latest
-from fastapi.responses import Response
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+configure_logging()
+configure_tracing()
+
+logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------
-# Create FastAPI App
+# App
 # ---------------------------------------------------
 
 app = FastAPI(
     title="Global Logistics & Supply Chain Optimizer",
-    version="1.0.0"
+    version="1.0.0",
 )
-app.include_router(health_routes.router)
+
+app.state.limiter = limiter
+app.add_exception_handler(
+    RateLimitExceeded,
+    lambda request, exc: JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded"},
+    ),
+)
+app.add_middleware(SlowAPIMiddleware)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(TenantMiddleware)
+
+FastAPIInstrumentor.instrument_app(app)
 
 # ---------------------------------------------------
-# Startup Event (DB Validation Only)
+# Routers
+# ---------------------------------------------------
+
+app.include_router(health_routes.router)
+app.include_router(auth_routes.router)
+app.include_router(warehouse_routes.router)
+app.include_router(audit_routes.router)
+
+
+# ---------------------------------------------------
+# Startup
 # ---------------------------------------------------
 
 @app.on_event("startup")
-def startup_event():
-    """
-    Runs when application starts.
-    Validates DB connection.
-    """
-
-    logger.info("Starting application...")
-
+def startup_event() -> None:
     validate_database_connection(engine)
-
-    logger.info("Application startup complete.")
+    logger.info("application_started")
 
 
 # ---------------------------------------------------
-# Request Logging Middleware
+# Request context middleware
 # ---------------------------------------------------
 
 @app.middleware("http")
-async def request_logging_middleware(request: Request, call_next):
-
+async def request_context_middleware(request: Request, call_next: Callable) -> Response:
     request_id = str(uuid.uuid4())
-    start_time = time.time()
-    method = request.method
-    endpoint = request.url.path
+    request.state.request_id = request_id
 
-    logger.info(f"[{request_id}] Incoming request: {method} {endpoint}")
+    start = time.time()
+    response = await call_next(request)
+    duration = time.time() - start
 
-    try:
-        response = await call_next(request)
+    path = request.url.path
 
-        duration = time.time() - start_time
+    REQUEST_COUNT.labels(
+        method=request.method,
+        endpoint=path,
+        http_status=response.status_code,
+    ).inc()
+    REQUEST_LATENCY.labels(endpoint=path).observe(duration)
 
-        REQUEST_COUNT.labels(
-            method=method,
-            endpoint=endpoint,
-            status=response.status_code
-        ).inc()
+    logger.info(
+        "request_completed",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": path,
+            "status_code": response.status_code,
+            "duration_ms": round(duration * 1000, 2),
+        },
+    )
 
-        REQUEST_LATENCY.labels(
-            method=method,
-            endpoint=endpoint
-        ).observe(duration)
+    return response
 
-        logger.info(
-            f"[{request_id}] Completed in {round(duration * 1000, 2)}ms "
-            f"| Status {response.status_code}"
-        )
-
-        return response
-
-    except Exception as e:
-        ERROR_COUNT.inc()
-        logger.error(f"[{request_id}] Request failed: {str(e)}")
-        raise
 
 # ---------------------------------------------------
-# Metrics Endpoint
-# ---------------------------------------------------
-@app.get("/metrics")
-def metrics():
-    return Response(generate_latest(), media_type="text/plain")
-
-# ---------------------------------------------------
-# Include Routers
+# Metrics
 # ---------------------------------------------------
 
-app.include_router(warehouse_routes.router)
+@app.get("/metrics", include_in_schema=False)
+def metrics() -> Response:
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)

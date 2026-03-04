@@ -5,7 +5,7 @@ from backend.services.inventory_service import reserve_inventory
 from backend.core.db_retry import retry_on_deadlock
 from backend.core.logger import logger
 import json
-
+from backend.services.audit_service import log_action
 
 # ---------------------------------------------------
 # Shipment State Machine (Single Source of Truth)
@@ -97,19 +97,11 @@ def create_shipment_atomic(db: Session, shipment_data, idem_key: str):
 # ---------------------------------------------------
 # Update Shipment Status (State Machine Enforced)
 # ---------------------------------------------------
+def update_shipment_status(db: Session, shipment_id: int, new_status: str, user):
 
-def update_shipment_status(db: Session, shipment_id: int, new_status: str):
-    """
-    Updates shipment status with strict state validation.
-    Uses row-level locking for concurrency safety.
-    """
-
-    shipment = (
-        db.query(Shipment)
-        .filter(Shipment.id == shipment_id)
-        .with_for_update()
-        .first()
-    )
+    shipment = db.query(Shipment).filter(
+        Shipment.id == shipment_id
+    ).with_for_update().first()
 
     if not shipment:
         raise HTTPException(status_code=404, detail="Shipment not found")
@@ -122,14 +114,23 @@ def update_shipment_status(db: Session, shipment_id: int, new_status: str):
             detail=f"Invalid transition from {current_status} to {new_status}"
         )
 
+    old_data = {"status": shipment.status}
+
     shipment.status = new_status
+
+    new_data = {"status": shipment.status}
+
+    log_action(
+        db=db,
+        user_id=user.id,
+        action="UPDATE_STATUS",
+        entity_type="Shipment",
+        entity_id=shipment.id,
+        old_value=old_data,
+        new_value=new_data,
+    )
 
     db.commit()
     db.refresh(shipment)
-
-    logger.info(
-        f"Shipment {shipment_id} status changed "
-        f"from {current_status} to {new_status}"
-    )
 
     return shipment
