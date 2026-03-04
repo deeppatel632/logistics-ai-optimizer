@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     # Override via KAFKA_BOOTSTRAP_SERVERS env var for other environments.
     kafka_bootstrap_servers: str = "kafka:9092"
 
+    # Triton Inference Server (Step 49)
+    triton_base_url: str = "http://triton:8000"
+
+    # MinIO / Data Lake (Step 50)
+    minio_endpoint:   str = "http://minio:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin"
+    minio_bucket:     str = "logistics-data-lake"
+    minio_use_ssl:    bool = False
+
     # JWT
     jwt_secret: str
     jwt_algorithm: str

@@ -14,6 +14,7 @@ volumes:
   prometheus_data:
   grafana_data:
   kafka_data:
+  minio_data:
 
 services:
 
@@ -305,3 +306,83 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
+
+  # -------------------------------------------------------------------------
+  # MinIO — S3-compatible object store (Data Lake, Step 50)
+  #
+  # Used for:
+  #   • Training dataset exports (training/ prefix)
+  #   • Trained model artefacts  (models/ prefix)
+  #   • Inference logs           (inference-logs/ prefix)
+  #
+  # Console UI: http://localhost:9001  (login: minioadmin / minioadmin)
+  # S3 API:     http://localhost:9000  (used by boto3 in backend/storage/)
+  #
+  # In production, replace with a managed MinIO cluster or AWS S3.
+  # Change MINIO_ROOT_USER / MINIO_ROOT_PASSWORD via .env.prod.
+  # -------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: logistics_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"   # S3-compatible API (boto3 endpoint)
+      - "9001:9001"   # MinIO web console
+    volumes:
+      - minio_data:/data
+    networks:
+      - logistics_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # NVIDIA Triton Inference Server  (Model Serving, Step 49)
+  #
+  # Serves ONNX, TensorRT, TensorFlow, PyTorch, and scikit-learn models.
+  # Models are loaded from the model repository directory:
+  #   ./triton_models/  →  /models  (inside container)
+  #
+  # Directory structure (one sub-dir per model):
+  #   triton_models/
+  #   └── eta_model/
+  #       ├── config.pbtxt          ← model metadata / IO spec
+  #       └── 1/
+  #           └── model.onnx        ← model artefact
+  #
+  # HTTP API:  http://triton:8000  (used by model_client.py)
+  # gRPC API:  triton:8001
+  # Metrics:   http://triton:8002/metrics  (Prometheus-compatible)
+  #
+  # GPU support: add `deploy.resources.reservations.devices` (see Docker docs).
+  # CPU-only:    the default config below runs on CPU.
+  # -------------------------------------------------------------------------
+  triton:
+    image: nvcr.io/nvidia/tritonserver:24.01-py3
+    container_name: logistics_triton
+    command: tritonserver --model-repository=/models --log-verbose=1
+    volumes:
+      - ./triton_models:/models:ro
+    ports:
+      - "8001:8000"   # Triton HTTP (mapped to 8001 to avoid conflict with FastAPI)
+      - "8002:8001"   # Triton gRPC
+      - "8003:8002"   # Triton metrics
+    networks:
+      - logistics_net
+    restart: unless-stopped
+    environment:
+      # Tell model_client.py where to find Triton inside the Docker network.
+      TRITON_BASE_URL: "http://triton:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v2/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s   # Triton loads models on startup — can be slow
