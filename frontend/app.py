@@ -207,7 +207,44 @@ def inventory_page():
 @app.route("/analytics")
 @login_required
 def analytics_page():
-    return render_template("analytics.html", username=session.get("username"))
+    stats: Dict[str, Any] = {"username": session.get("username", "—")}
+
+    try:
+        shipments = _api_get("/shipments")
+        if not isinstance(shipments, list):
+            shipments = []
+    except Exception:
+        shipments = []
+
+    try:
+        vehicles = _api_get("/streaming/vehicles")
+        if not isinstance(vehicles, list):
+            vehicles = []
+    except Exception:
+        vehicles = []
+
+    try:
+        kpis = _api_get("/analytics/kpis")
+        warehouse_load = kpis.get("warehouse_load", []) if isinstance(kpis, dict) else []
+    except Exception:
+        warehouse_load = []
+
+    status_counts: Dict[str, int] = {}
+    for s in shipments:
+        st = s.get("status", "UNKNOWN")
+        status_counts[st] = status_counts.get(st, 0) + 1
+
+    stats.update({
+        "total_shipments":     len(shipments),
+        "active_shipments":    status_counts.get("IN_TRANSIT", 0),
+        "delivered_shipments": status_counts.get("DELIVERED", 0),
+        "cancelled_shipments": status_counts.get("CANCELLED", 0),
+        "created_shipments":   status_counts.get("CREATED", 0),
+        "total_vehicles":      len(vehicles),
+        "active_vehicles":     sum(1 for v in vehicles if v.get("status") in ("En Route", "en_route", "IN_TRANSIT")),
+        "total_warehouses":    len(warehouse_load),
+    })
+    return render_template("analytics.html", stats=stats, username=session.get("username"))
 
 
 # ---------------------------------------------------------------------------
@@ -305,6 +342,123 @@ def api_inventory():
         return jsonify({"error": str(exc)}), exc.response.status_code
     except httpx.RequestError as exc:
         return jsonify({"error": "backend unreachable", "detail": str(exc)}), 503
+
+
+@app.route("/api/analytics/data")
+@login_required
+def api_analytics_data():
+    """Aggregate shipments + vehicles + inventory into chart-ready JSON.
+
+    Response shape
+    ──────────────
+    {
+      "kpis":                { total_shipments, active_shipments, delivered_shipments,
+                               cancelled_shipments, created_shipments,
+                               total_vehicles, active_vehicles, total_warehouses },
+      "shipments_over_time": { labels: ["YYYY-MM-DD", ...], data: [n, ...] },
+      "status_distribution": { labels: [status, ...], data: [n, ...] },
+      "vehicle_utilization": { labels: ["Type #id", ...], data: [n, ...] },
+      "inventory_activity":  { labels: [wh_name, ...], stock: [n, ...], capacity: [n, ...] },
+    }
+    """
+    from collections import defaultdict
+
+    # ── Fetch raw data ─────────────────────────────────────────────────────
+    shipments: list = []
+    vehicles:  list = []
+    warehouse_load: list = []
+
+    try:
+        raw = _api_get("/shipments")
+        shipments = raw if isinstance(raw, list) else []
+    except Exception as exc:
+        logger.warning("api_analytics_data: /shipments failed — %s", exc)
+
+    try:
+        raw = _api_get("/streaming/vehicles")
+        vehicles = raw if isinstance(raw, list) else []
+    except Exception as exc:
+        logger.warning("api_analytics_data: /streaming/vehicles failed — %s", exc)
+
+    try:
+        raw = _api_get("/analytics/kpis")
+        warehouse_load = raw.get("warehouse_load", []) if isinstance(raw, dict) else []
+    except Exception as exc:
+        logger.warning("api_analytics_data: /analytics/kpis failed — %s", exc)
+
+    # ── KPI counters ──────────────────────────────────────────────────────
+    status_counts: Dict[str, int] = defaultdict(int)
+    for s in shipments:
+        status_counts[s.get("status", "UNKNOWN")] += 1
+
+    active_statuses = {"En Route", "en_route", "IN_TRANSIT", "Available"}
+    kpis = {
+        "total_shipments":     len(shipments),
+        "active_shipments":    status_counts.get("IN_TRANSIT", 0),
+        "delivered_shipments": status_counts.get("DELIVERED", 0),
+        "cancelled_shipments": status_counts.get("CANCELLED", 0),
+        "created_shipments":   status_counts.get("CREATED", 0),
+        "total_vehicles":      len(vehicles),
+        "active_vehicles":     sum(1 for v in vehicles if v.get("status") in active_statuses),
+        "total_warehouses":    len(warehouse_load),
+    }
+
+    # ── Shipments over time (grouped by creation date) ────────────────────
+    date_counts: Dict[str, int] = defaultdict(int)
+    for s in shipments:
+        ts = s.get("created_at") or s.get("createdAt") or ""
+        if ts:
+            date_counts[str(ts)[:10]] += 1
+    sorted_dates = sorted(date_counts)
+
+    # ── Status distribution ───────────────────────────────────────────────
+    # Enforce a fixed ordering so the pie chart legend is consistent
+    ordered_statuses = ["CREATED", "IN_TRANSIT", "DELIVERED", "CANCELLED"]
+    all_statuses = ordered_statuses + [k for k in status_counts if k not in ordered_statuses]
+    status_dist_labels = [s for s in all_statuses if s in status_counts]
+    status_dist_data   = [status_counts[s] for s in status_dist_labels]
+
+    # ── Vehicle utilisation (shipments handled per vehicle) ───────────────
+    vehicle_shipments: Dict[str, int] = defaultdict(int)
+    for s in shipments:
+        vid = s.get("vehicle_id")
+        if vid is not None:
+            vehicle_shipments[str(vid)] += 1
+
+    vehicle_labels_map = {
+        str(v.get("id", "")): f"{v.get('type', 'Vehicle')} #{v.get('id', '?')}"
+        for v in vehicles
+    }
+    # Top 15 by shipment count
+    top_vehicles = sorted(vehicle_shipments.items(), key=lambda x: -x[1])[:15]
+    vutil_labels = [vehicle_labels_map.get(vid, f"Vehicle #{vid}") for vid, _ in top_vehicles]
+    vutil_data   = [cnt for _, cnt in top_vehicles]
+
+    # ── Inventory activity (stock vs capacity per warehouse) ──────────────
+    inv_labels   = [w.get("name") or f"WH {w.get('warehouse_id', '?')}" for w in warehouse_load]
+    inv_stock    = [w.get("stock_quantity", 0) for w in warehouse_load]
+    inv_capacity = [w.get("capacity", 0) for w in warehouse_load]
+
+    return jsonify({
+        "kpis":                kpis,
+        "shipments_over_time": {
+            "labels": sorted_dates,
+            "data":   [date_counts[d] for d in sorted_dates],
+        },
+        "status_distribution": {
+            "labels": status_dist_labels,
+            "data":   status_dist_data,
+        },
+        "vehicle_utilization": {
+            "labels": vutil_labels,
+            "data":   vutil_data,
+        },
+        "inventory_activity": {
+            "labels":   inv_labels,
+            "stock":    inv_stock,
+            "capacity": inv_capacity,
+        },
+    })
 
 
 @app.route("/api/vehicles/location", methods=["POST"])
