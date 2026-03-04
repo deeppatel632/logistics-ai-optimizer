@@ -1,0 +1,133 @@
+# =============================================================================
+# k8s/ingress.yaml
+#
+# NGINX Ingress for the logistics-ai namespace.
+#
+# Prerequisites:
+#   1. ingress-nginx controller installed in your cluster:
+#         helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+#         helm install ingress-nginx ingress-nginx/ingress-nginx \
+#           --namespace ingress-nginx --create-namespace
+#
+#   2. cert-manager for automated TLS certificates:
+#         helm repo add jetstack https://charts.jetstack.io
+#         helm install cert-manager jetstack/cert-manager \
+#           --namespace cert-manager --create-namespace \
+#           --set installCRDs=true
+#
+#   3. A ClusterIssuer named "letsencrypt-prod" (example below) or
+#      substitute your own issuer.
+#
+#   4. DNS A record:  api.example.com  →  <external IP of ingress controller>
+#        kubectl get svc ingress-nginx-controller -n ingress-nginx
+#
+# ---
+# ClusterIssuer example (apply separately BEFORE this file):
+#
+#   apiVersion: cert-manager.io/v1
+#   kind: ClusterIssuer
+#   metadata:
+#     name: letsencrypt-prod
+#   spec:
+#     acme:
+#       server: https://acme-v02.api.letsencrypt.org/directory
+#       email: devops@example.com          # ← change this
+#       privateKeySecretRef:
+#         name: letsencrypt-prod
+#       solvers:
+#         - http01:
+#             ingress:
+#               class: nginx
+#
+# Replace "api.example.com" in this file with your real domain before deploying.
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-ingress
+  namespace: logistics-ai
+  labels:
+    app: api
+    app.kubernetes.io/part-of: logistics-ai-optimizer
+  annotations:
+    # -------------------------------------------------------------------------
+    # Ingress controller class
+    # -------------------------------------------------------------------------
+    kubernetes.io/ingress.class: nginx
+
+    # -------------------------------------------------------------------------
+    # TLS certificate — cert-manager issues and renews automatically.
+    # -------------------------------------------------------------------------
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+    # -------------------------------------------------------------------------
+    # Request/response timing
+    # Long-running AI optimisation endpoints may take up to 120 s.
+    # -------------------------------------------------------------------------
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+
+    # -------------------------------------------------------------------------
+    # Body size — shipment bulk-upload payloads can be large.
+    # -------------------------------------------------------------------------
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+
+    # -------------------------------------------------------------------------
+    # Rate limiting — 100 req/min per client IP (burst 20).
+    # Adjust these values based on your SLA / fair-use policy.
+    # -------------------------------------------------------------------------
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "20"
+
+    # -------------------------------------------------------------------------
+    # HTTP → HTTPS redirect
+    # -------------------------------------------------------------------------
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # -------------------------------------------------------------------------
+    # CORS — allow the frontend origin.  Adjust or remove if CORS is handled
+    # inside the FastAPI application (current code sets CORS middleware).
+    # Setting both here and in the app is safe (headers are deduplicated by
+    # nginx); remove from one layer if you see duplicate header warnings.
+    # -------------------------------------------------------------------------
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://app.example.com"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Authorization, Content-Type, X-Tenant-ID"
+    nginx.ingress.kubernetes.io/cors-max-age: "86400"
+
+    # -------------------------------------------------------------------------
+    # Security headers injected by the ingress controller.
+    # These supplement the headers the FastAPI app may already set.
+    # -------------------------------------------------------------------------
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "Referrer-Policy: no-referrer";
+
+spec:
+  ingressClassName: nginx
+
+  tls:
+    - hosts:
+        - api.example.com   # ← replace with your real domain
+      secretName: api-tls   # cert-manager creates/updates this Secret
+
+  rules:
+    - host: api.example.com   # ← replace with your real domain
+      http:
+        paths:
+          # ------------------------------------------------------------------
+          # All API traffic → api-service.
+          # pathType: Prefix catches /api/v1/..., /health/..., /docs, etc.
+          # ------------------------------------------------------------------
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-service
+                port:
+                  number: 80

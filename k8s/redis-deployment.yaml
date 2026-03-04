@@ -1,0 +1,127 @@
+# =============================================================================
+# k8s/redis-deployment.yaml
+#
+# Redis 7 — in-cluster cache and Celery broker/result-backend.
+#
+# StatefulSet vs Deployment:
+#   A StatefulSet is used instead of a Deployment because Redis is stateful.
+#   StatefulSets give each pod a stable network identity (redis-0) and an
+#   ordered, graceful restart sequence — important when Redis has persistent
+#   data.  For a purely ephemeral broker (tasks discarded on restart) a
+#   Deployment is acceptable; switch `kind` and remove the volumeClaimTemplate
+#   if that trade-off fits your requirements.
+#
+# Persistence:
+#   A PersistentVolumeClaim is mounted at /data so AOF/RDB snapshots survive
+#   pod restarts.  Remove the volumeClaimTemplates + volumeMount if you want
+#   a stateless broker (all queued tasks lost on pod restart).
+#
+# The Service that exposes Redis to other pods is defined in services.yaml.
+# =============================================================================
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: logistics-ai
+  labels:
+    app: redis
+    app.kubernetes.io/part-of: logistics-ai-optimizer
+spec:
+  serviceName: "redis-service"   # must match the Service name in services.yaml
+  replicas: 1                    # Redis sentinel/cluster for HA is out of scope here
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      # -----------------------------------------------------------------------
+      # Security context — run as a non-root user (Redis uid=999 in the image)
+      # -----------------------------------------------------------------------
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          imagePullPolicy: IfNotPresent
+
+          # -------------------------------------------------------------------
+          # Redis startup flags:
+          #   --appendonly yes        AOF persistence — safer than RDB only
+          #   --maxmemory 256mb       Prevent unbounded memory growth
+          #   --maxmemory-policy …    LRU eviction when limit is reached
+          #   --loglevel notice       Reduce log verbosity in production
+          # -------------------------------------------------------------------
+          command:
+            - redis-server
+            - "--appendonly"
+            - "yes"
+            - "--maxmemory"
+            - "256mb"
+            - "--maxmemory-policy"
+            - "allkeys-lru"
+            - "--loglevel"
+            - "notice"
+
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+
+          # -------------------------------------------------------------------
+          # Probes
+          # redis-cli ping returns "+PONG" when the server is ready.
+          # -------------------------------------------------------------------
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 5
+
+          # -------------------------------------------------------------------
+          # Resource limits — prevents Redis from consuming all node memory
+          # when Celery result TTLs are not configured or tasks generate large
+          # results.
+          # -------------------------------------------------------------------
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+
+  # ---------------------------------------------------------------------------
+  # PVC template — each StatefulSet pod gets its own PersistentVolumeClaim.
+  # storageClassName: leave blank to use the cluster default StorageClass.
+  # For GKE use "standard-rwo"; for EKS use "gp2" or "gp3".
+  # ---------------------------------------------------------------------------
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+        # storageClassName: "standard-rwo"   # ← uncomment and set for your cloud

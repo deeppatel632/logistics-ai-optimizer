@@ -1,0 +1,22 @@
+# =============================================================================
+# k8s/namespace.yaml
+#
+# Kubernetes Namespace — logical isolation boundary for all logistics-ai
+# resources.  Every subsequent manifest targets this namespace via
+# `metadata.namespace: logistics-ai`.
+#
+# Apply first:
+#   kubectl apply -f k8s/namespace.yaml
+#
+# Remove everything in the namespace (destructive!):
+#   kubectl delete namespace logistics-ai
+# =============================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: logistics-ai
+  labels:
+    # Arbitrary labels for multi-cluster tooling (Argo CD, Lens, etc.)
+    app.kubernetes.io/part-of: logistics-ai-optimizer
+    environment: production

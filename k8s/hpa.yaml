@@ -1,0 +1,157 @@
+# =============================================================================
+# k8s/hpa.yaml
+#
+# HorizontalPodAutoscaler objects for the logistics-ai namespace.
+#
+# Prerequisites:
+#   • metrics-server must be running in your cluster:
+#       kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#     Verify:
+#       kubectl top pods -n logistics-ai
+#
+# Two scalers are defined:
+#   1. api-hpa     — scales FastAPI pods  (2 → 10) on CPU ≥ 70 %
+#   2. celery-hpa  — scales Celery workers (2 → 8) on CPU ≥ 80 %
+#
+# Scaling behaviour notes:
+#   • scaleDown stabilisationWindow = 120 s (default 300 s) — workers that
+#     finish their current task will be scaled in faster, reducing idle cost.
+#   • scaleUp selectPolicy = Max — when both CPU and memory fire together,
+#     take the larger recommended replica count.
+#   • Setting CPU thresholds slightly higher for Celery (80 %) avoids
+#     aggressive scale-out for short CPU spikes from a single heavy task.
+#
+# Advanced note:
+#   For deeper queue-length based scaling (scale out when the Celery queue
+#   depth exceeds N), replace or augment these HPAs with KEDA
+#   (Kubernetes Event-Driven Autoscaler):
+#     https://keda.sh/docs/2.13/scalers/redis-lists/
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. API HPA — target: api-deployment
+# ---------------------------------------------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-hpa
+  namespace: logistics-ai
+  labels:
+    app: api
+    app.kubernetes.io/part-of: logistics-ai-optimizer
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-deployment
+
+  minReplicas: 2
+  maxReplicas: 10
+
+  metrics:
+    # ------------------------------------------------------------------
+    # Primary signal: CPU utilisation.
+    # Scale out when average pod CPU exceeds 70 % of the pod's CPU request
+    # (250m).  Scale in when it drops back below the threshold.
+    # ------------------------------------------------------------------
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    # ------------------------------------------------------------------
+    # Secondary signal: memory.
+    # Scale out if pods consistently use > 80 % of their memory request.
+    # Useful when large request payloads push memory before CPU spikes.
+    # ------------------------------------------------------------------
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30   # react quickly to traffic spikes
+      policies:
+        - type: Pods
+          value: 2                     # add at most 2 pods per scaling event
+          periodSeconds: 60
+      selectPolicy: Max
+
+    scaleDown:
+      stabilizationWindowSeconds: 120  # don't scale in too aggressively
+      policies:
+        - type: Pods
+          value: 1                     # remove at most 1 pod per scaling event
+          periodSeconds: 60
+      selectPolicy: Min
+
+---
+# ---------------------------------------------------------------------------
+# 2. Celery HPA — target: celery-deployment
+# ---------------------------------------------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: celery-hpa
+  namespace: logistics-ai
+  labels:
+    app: celery-worker
+    app.kubernetes.io/part-of: logistics-ai-optimizer
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: celery-deployment
+
+  minReplicas: 2
+  maxReplicas: 8
+
+  metrics:
+    # ------------------------------------------------------------------
+    # CPU is the primary signal for worker scaling.
+    # Workers are CPU-bound (ML inference, route optimisation), so 80 %
+    # is a reasonable threshold before spawning another worker pod.
+    # ------------------------------------------------------------------
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+    # ------------------------------------------------------------------
+    # Memory guard — Celery workers can hold large in-memory objects
+    # (NumPy arrays, DataFrames).  Scale out at 85 % memory utilisation.
+    # ------------------------------------------------------------------
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 85
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60   # workers take longer to warm up
+      policies:
+        - type: Pods
+          value: 2                     # add up to 2 workers at a time
+          periodSeconds: 60
+      selectPolicy: Max
+
+    scaleDown:
+      # ------------------------------------------------------------------
+      # Wait 5 minutes before scaling in workers — long tasks can hold CPU
+      # at 0 % between processing bursts, causing premature scale-in.
+      # ------------------------------------------------------------------
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1                     # remove 1 worker pod at a time
+          periodSeconds: 120           # at most once every 2 minutes
+      selectPolicy: Min

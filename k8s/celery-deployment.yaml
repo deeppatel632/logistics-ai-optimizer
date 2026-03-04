@@ -1,0 +1,194 @@
+# =============================================================================
+# k8s/celery-deployment.yaml
+#
+# Celery distributed worker pool — processes background tasks from Redis.
+#
+# Design notes:
+#   • Reuses the same container image as the API (logistics_api:latest).
+#     The command override switches the process from uvicorn to celery worker.
+#   • Queue routing: workers consume all 4 queues by default.
+#     For specialised pools (GPU prediction, high-concurrency optimisation)
+#     deploy additional Deployments with a -Q flag targeting a single queue.
+#   • Horizontal scaling: HPA (hpa.yaml) scales this 2 → 8 replicas on CPU.
+#   • env vars are identical to the API deployment (same ConfigMap + Secret).
+#   • terminationGracePeriodSeconds=60 gives in-flight tasks up to a minute
+#     to finish before the worker is hard-killed on a rolling update.
+#
+# Specialised worker pool example (GPU prediction only):
+#
+#   kubectl scale deployment celery-prediction-deployment --replicas=2
+#
+# with command:
+#   celery -A backend.workers.celery_app worker -Q prediction -c 1 --loglevel=info
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-deployment
+  namespace: logistics-ai
+  labels:
+    app: celery-worker
+    app.kubernetes.io/part-of: logistics-ai-optimizer
+spec:
+  replicas: 2   # HPA (hpa.yaml) scales 2 → 8
+
+  selector:
+    matchLabels:
+      app: celery-worker
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Allow 1 extra pod during rollout; keep at least 1 running so queued
+      # tasks continue to be consumed during the deployment.
+      maxUnavailable: 1
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+      annotations:
+        checksum/config: "update-after-configmap-change"
+
+    spec:
+      # -----------------------------------------------------------------------
+      # Grace period — Celery's default shutdown signal (SIGTERM) triggers a
+      # "warm shutdown": the worker finishes the current task then exits.
+      # Set this ≥ your longest expected task duration (task_time_limit = 300 s).
+      # We use 90 s here as a reasonable middle ground; increase if your jobs
+      # routinely run longer.
+      # -----------------------------------------------------------------------
+      terminationGracePeriodSeconds: 90
+
+      # -----------------------------------------------------------------------
+      # Spread worker pods across nodes so a single node failure does not halt
+      # all background processing.
+      # -----------------------------------------------------------------------
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway   # relax constraint; prefer spread
+          labelSelector:
+            matchLabels:
+              app: celery-worker
+
+      containers:
+        - name: celery-worker
+          image: logistics_api:latest
+          imagePullPolicy: Always
+
+          # -----------------------------------------------------------------
+          # Override the Dockerfile CMD (uvicorn) with the Celery worker
+          # command.  Flags:
+          #   -A backend.workers.celery_app  → app module
+          #   worker                         → run as a worker (not beat/flower)
+          #   -Q …                           → consume all 4 queues
+          #   --concurrency=4               → 4 child processes per pod
+          #                                   (tune to match pod CPU limit)
+          #   --loglevel=info                → structured log output
+          #   --without-gossip               → disable worker-to-worker gossip
+          #                                   (not needed, reduces Redis traffic)
+          #   --without-mingle               → skip state sync on startup
+          #                                   (faster starts in k8s)
+          # -----------------------------------------------------------------
+          command:
+            - celery
+            - "-A"
+            - backend.workers.celery_app
+            - worker
+            - "-Q"
+            - "celery,optimization,prediction,simulation"
+            - "--concurrency=4"
+            - "--loglevel=info"
+            - "--without-gossip"
+            - "--without-mingle"
+
+          envFrom:
+            - configMapRef:
+                name: logistics-config
+
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: logistics-secrets
+                  key: DB_PASSWORD
+
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: logistics-secrets
+                  key: JWT_SECRET
+
+            - name: PRIMARY_DB_URL
+              value: "mssql+pyodbc://$(DB_USER):$(DB_PASSWORD)@$(DB_SERVER):$(DB_PORT)/$(DB_NAME)?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+
+            - name: REPLICA_DB_URL
+              value: "mssql+pyodbc://$(DB_USER):$(DB_PASSWORD)@$(DB_SERVER):$(DB_PORT)/$(DB_NAME)?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+
+          # -----------------------------------------------------------------
+          # Liveness probe for Celery workers.
+          # Celery exposes no HTTP endpoint, so we use a CLI healthcheck:
+          #   celery inspect ping  →  returns "pong" if the worker is alive.
+          # Timeout set to 10 s to account for a busy event loop.
+          # -----------------------------------------------------------------
+          livenessProbe:
+            exec:
+              command:
+                - bash
+                - "-c"
+                - |
+                  celery -A backend.workers.celery_app inspect ping \
+                    -d "celery@$HOSTNAME" \
+                    --timeout 5 2>&1 | grep -q "pong"
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 15
+            failureThreshold: 3
+
+          # -----------------------------------------------------------------
+          # Readiness probe — mark the pod not-ready if the worker can't
+          # reach its own message broker.  Uses the same ping check.
+          # -----------------------------------------------------------------
+          readinessProbe:
+            exec:
+              command:
+                - bash
+                - "-c"
+                - |
+                  celery -A backend.workers.celery_app inspect ping \
+                    -d "celery@$HOSTNAME" \
+                    --timeout 5 2>&1 | grep -q "pong"
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "2000m"       # 4 concurrent processes need more CPU headroom
+              memory: "1Gi"
+
+          securityContext:
+            allowPrivilegeEscalation: false
+
+---
+# ---------------------------------------------------------------------------
+# PodDisruptionBudget for Celery workers.
+# Ensures at least 1 worker continues draining the queue during a node drain.
+# ---------------------------------------------------------------------------
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: celery-pdb
+  namespace: logistics-ai
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: celery-worker

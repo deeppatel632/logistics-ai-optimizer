@@ -1,0 +1,104 @@
+# =============================================================================
+# k8s/services.yaml
+#
+# Kubernetes Services for all workloads in the logistics-ai namespace.
+#
+# Services defined here:
+#   1. api-service      — ClusterIP; routes cluster traffic to FastAPI pods.
+#                         Ingress (ingress.yaml) targets this service.
+#   2. redis-service    — Headless ClusterIP (clusterIP: None) for the Redis
+#                         StatefulSet.  A headless service gives each pod a
+#                         stable DNS name (<pod>.<svc>.<ns>.svc.cluster.local)
+#                         and is required for StatefulSet stable identity.
+#   3. celery-metrics   — Optional ClusterIP for Flower (Celery monitoring).
+#                         Expose only inside the cluster or behind an
+#                         auth-gated Ingress rule.
+#
+# External access is handled entirely by the Ingress object (ingress.yaml);
+# do NOT set type: LoadBalancer here unless you have a specific requirement for
+# a dedicated cloud load-balancer per service.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. API Service — routes HTTP from the Ingress controller to FastAPI pods.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+  namespace: logistics-ai
+  labels:
+    app: api
+    app.kubernetes.io/part-of: logistics-ai-optimizer
+spec:
+  type: ClusterIP
+  selector:
+    app: api           # matches pods in api-deployment.yaml
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80         # cluster-internal port (Ingress backend uses this)
+      targetPort: 8000 # uvicorn listens on 8000 inside the container
+
+---
+# ---------------------------------------------------------------------------
+# 2. Redis Service (headless) — stable DNS for the Redis StatefulSet.
+#
+# clusterIP: None  →  headless; DNS resolves directly to pod IPs.
+# This is required for k8s StatefulSet pods to address each other and is
+# referenced by the StatefulSet's `serviceName` field in redis-deployment.yaml.
+#
+# Other pods connect via the service name:  redis-service:6379
+# (headless still works; DNS returns the single pod IP for single-replica sets)
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: logistics-ai
+  labels:
+    app: redis
+    app.kubernetes.io/part-of: logistics-ai-optimizer
+spec:
+  clusterIP: None    # headless — required for StatefulSet stable identity
+  selector:
+    app: redis       # matches pods in redis-deployment.yaml (StatefulSet)
+  ports:
+    - name: redis
+      protocol: TCP
+      port: 6379
+      targetPort: 6379
+
+---
+# ---------------------------------------------------------------------------
+# 3. Flower Service — exposes the Celery Flower monitoring UI inside the
+#    cluster.  To view externally, add an Ingress rule or use kubectl port-
+#    forward:
+#
+#       kubectl port-forward svc/celery-flower-service 5555:5555 -n logistics-ai
+#
+# Flower is NOT included in the k8s Deployments above (it was part of the
+# Docker Compose stack).  If you add a celery-flower-deployment.yaml, update
+# the selector below to match its pod labels.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: celery-flower-service
+  namespace: logistics-ai
+  labels:
+    app: celery-flower
+    app.kubernetes.io/part-of: logistics-ai-optimizer
+  annotations:
+    # Prevent accidental public exposure — Flower has no built-in auth.
+    # Remove this annotation only if you add authentication at the Ingress layer.
+    note: "internal-only — do not expose without auth-gated Ingress rule"
+spec:
+  type: ClusterIP
+  selector:
+    app: celery-flower   # update if you add a Flower Deployment
+  ports:
+    - name: flower
+      protocol: TCP
+      port: 5555
+      targetPort: 5555

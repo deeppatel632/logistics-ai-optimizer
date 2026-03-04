@@ -1,0 +1,221 @@
+# =============================================================================
+# k8s/api-deployment.yaml
+#
+# FastAPI application — HTTP API layer.
+#
+# Design notes:
+#   • All 22 pydantic Settings fields are supplied via env vars so the app
+#     starts without a .env file.
+#   • Non-sensitive vars sourced from ConfigMap (envFrom + selective overrides).
+#   • DB_PASSWORD and JWT_SECRET injected from Secret via valueFrom.
+#   • PRIMARY_DB_URL and REPLICA_DB_URL are BUILT at pod startup using
+#     Kubernetes variable substitution ($(VAR_NAME)) — avoids embedding the
+#     password in a pre-formed URL string a second time.
+#   • Readiness probe uses /health/ready (DB + Redis checks).
+#   • Liveness probe uses /health/live (in-process heartbeat only).
+#   • PodDisruptionBudget is defined at the bottom to ensure at least 1
+#     replica stays available during node drains / rolling updates.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Deployment
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-deployment
+  namespace: logistics-ai
+  labels:
+    app: api
+    app.kubernetes.io/part-of: logistics-ai-optimizer
+spec:
+  replicas: 2   # Minimum replicas; HPA (hpa.yaml) scales 2 → 10
+
+  selector:
+    matchLabels:
+      app: api
+
+  # ---------------------------------------------------------------------------
+  # Rolling update strategy
+  # maxUnavailable=0  → zero-downtime deploys (new pods start before old stop)
+  # maxSurge=1        → allow 1 extra pod beyond `replicas` during the rollout
+  # ---------------------------------------------------------------------------
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: api
+      annotations:
+        # Force a rolling restart when the ConfigMap or Secret changes.
+        # Update this hash by running:
+        #   kubectl annotate deployment api-deployment \
+        #     checksum/config="$(kubectl get cm logistics-config -o yaml | sha256sum)" \
+        #     -n logistics-ai --overwrite
+        checksum/config: "update-after-configmap-change"
+
+    spec:
+      # -----------------------------------------------------------------------
+      # Terminate gracefully — give uvicorn up to 30 s to drain in-flight
+      # requests before SIGKILL.
+      # -----------------------------------------------------------------------
+      terminationGracePeriodSeconds: 30
+
+      # -----------------------------------------------------------------------
+      # Spread pods across different nodes for high availability.
+      # -----------------------------------------------------------------------
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: api
+
+      containers:
+        - name: api
+          # Use a pinned digest in production instead of :latest to get
+          # reproducible deployments:
+          #   image: your-registry/logistics_api@sha256:<digest>
+          image: logistics_api:latest
+          imagePullPolicy: Always   # change to IfNotPresent for local clusters
+
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+
+          # -----------------------------------------------------------------
+          # Environment variables
+          #
+          # Injection order matters for the $(VAR) substitution pattern:
+          #   1. envFrom: load all non-sensitive ConfigMap keys
+          #   2. valueFrom: overlay DB_PASSWORD and JWT_SECRET from Secret
+          #   3. value: build PRIMARY_DB_URL / REPLICA_DB_URL using $(VAR)
+          #      substitution — Kubernetes resolves these after all env entries
+          #      in the same pod spec have been processed.
+          # -----------------------------------------------------------------
+
+          # Load entire ConfigMap as env vars in one block.
+          envFrom:
+            - configMapRef:
+                name: logistics-config
+
+          env:
+            # ---------------------------------------------------------------
+            # Secrets injected individually so they appear in the env under
+            # the exact name pydantic Settings expects.
+            # ---------------------------------------------------------------
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: logistics-secrets
+                  key: DB_PASSWORD
+
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: logistics-secrets
+                  key: JWT_SECRET
+
+            # ---------------------------------------------------------------
+            # Construct the full ODBC connection URLs from individual env vars.
+            # $(DB_PASSWORD) is resolved from the Secret injected above.
+            # The driver parameter spaces are pre-encoded as '+' here because
+            # the value is used directly in the SQLAlchemy URL string.
+            # ---------------------------------------------------------------
+            - name: PRIMARY_DB_URL
+              value: "mssql+pyodbc://$(DB_USER):$(DB_PASSWORD)@$(DB_SERVER):$(DB_PORT)/$(DB_NAME)?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+
+            - name: REPLICA_DB_URL
+              value: "mssql+pyodbc://$(DB_USER):$(DB_PASSWORD)@$(DB_SERVER):$(DB_PORT)/$(DB_NAME)?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+
+          # -----------------------------------------------------------------
+          # Readiness probe — gates traffic routing.
+          # /health/ready checks DB connectivity + Redis ping.
+          # The pod receives no Service traffic until this probe passes.
+          # initialDelaySeconds is generous because the ODBC driver init
+          # and SQLAlchemy pool creation take several seconds on cold start.
+          # -----------------------------------------------------------------
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          # -----------------------------------------------------------------
+          # Liveness probe — triggers pod restart if the process hangs.
+          # Uses /health/live (pure in-process check, no DB/Redis calls)
+          # so a flaky database does not restart healthy app pods.
+          # -----------------------------------------------------------------
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 4
+
+          # -----------------------------------------------------------------
+          # Startup probe — suppresses liveness/readiness checks while the
+          # container is initialising (pip warm-up, DB pool creation).
+          # After successThreshold passes, normal probes take over.
+          # -----------------------------------------------------------------
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12   # 12 × 5 s = 60 s max startup window
+
+          # -----------------------------------------------------------------
+          # Resource requests & limits
+          # requests: what the scheduler uses for bin-packing decisions.
+          # limits:   what the kernel enforces (CPU throttle / OOM kill).
+          # Tune these based on observed usage in Grafana.
+          # -----------------------------------------------------------------
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+
+          # -----------------------------------------------------------------
+          # Read-only root filesystem — defence-in-depth: prevents a
+          # compromised process from writing malware to the container layer.
+          # -----------------------------------------------------------------
+          securityContext:
+            readOnlyRootFilesystem: false   # set true if uvicorn writes no temp files
+            allowPrivilegeEscalation: false
+            runAsNonRoot: false             # set true if your image runs as non-root
+
+---
+# ---------------------------------------------------------------------------
+# PodDisruptionBudget
+# Guarantees at least 1 api pod is available during voluntary disruptions
+# (node drains, cluster upgrades).  Without this, all replicas could be
+# terminated simultaneously during a drain.
+# ---------------------------------------------------------------------------
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-pdb
+  namespace: logistics-ai
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: api

@@ -1,0 +1,66 @@
+# =============================================================================
+# k8s/configmap.yaml
+#
+# Non-sensitive environment variables shared by the API and Celery worker pods.
+# Sensitive values (DB_PASSWORD, JWT_SECRET) are kept in secrets.yaml.
+#
+# The PRIMARY_DB_URL and REPLICA_DB_URL are NOT stored here nor in the Secret
+# as a pre-formed string.  They are constructed at pod startup by Kubernetes
+# variable substitution:
+#   value: "mssql+pyodbc://$(DB_USER):$(DB_PASSWORD)@$(DB_SERVER):..."
+# This avoids duplicating the password across multiple secret keys.
+#
+# Mandatory changes before applying:
+#   DB_SERVER  →  replace with your Azure SQL Edge hostname or IP
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logistics-config
+  namespace: logistics-ai
+  labels:
+    app.kubernetes.io/part-of: logistics-ai-optimizer
+data:
+  # ---------------------------------------------------------------------------
+  # Application
+  # ---------------------------------------------------------------------------
+  APP_ENV: "production"
+  DEBUG: "false"
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+
+  # ---------------------------------------------------------------------------
+  # Database (non-sensitive fields)
+  # DB_SERVER: hostname of the Azure SQL Edge instance.
+  #   • In-cluster StatefulSet:  "sql-edge-service"
+  #   • Azure Managed SQL:       "<resource>.database.windows.net"
+  #   • External VM:             "db.internal.example.com"
+  # ---------------------------------------------------------------------------
+  DB_USER: "sa"
+  DB_SERVER: "azure-sql-edge.example.com"   # ← CHANGE to your SQL Edge host
+  DB_PORT: "1433"
+  DB_NAME: "logistics_db"
+  # URL-encode spaces as '+' for the pyodbc connection string driver fragment.
+  DB_DRIVER: "ODBC Driver 18 for SQL Server"
+
+  # Connection pool — tune to match the pod count × pool_size < SQL max connections
+  DB_POOL_SIZE: "5"
+  DB_MAX_OVERFLOW: "10"
+  DB_POOL_TIMEOUT: "30"
+  DB_POOL_RECYCLE: "1800"
+
+  # ---------------------------------------------------------------------------
+  # Redis
+  # redis-service is the Kubernetes Service name defined in services.yaml.
+  # Pods in the same namespace resolve it by short name.
+  # ---------------------------------------------------------------------------
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+
+  # ---------------------------------------------------------------------------
+  # JWT (algorithm and TTL are not secrets; only the signing key is)
+  # ---------------------------------------------------------------------------
+  JWT_ALGORITHM: "HS256"
+  JWT_EXPIRATION_MINUTES: "60"
