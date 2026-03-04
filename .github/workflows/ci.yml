@@ -12,6 +12,32 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    # All Settings fields required by pydantic-settings must be present so
+    # that `from backend.xxx import ...` doesn't fail during collection.
+    env:
+      APP_ENV: test
+      DEBUG: "false"
+      API_HOST: "0.0.0.0"
+      API_PORT: "8000"
+      DB_USER: test_user
+      DB_PASSWORD: test_pass
+      DB_SERVER: localhost
+      DB_PORT: "1433"
+      DB_NAME: test_db
+      DB_DRIVER: "ODBC Driver 18 for SQL Server"
+      PRIMARY_DB_URL: "mssql+pyodbc://test_user:test_pass@localhost:1433/test_db?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+      REPLICA_DB_URL: "mssql+pyodbc://test_user:test_pass@localhost:1433/test_db?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+      DB_POOL_SIZE: "2"
+      DB_MAX_OVERFLOW: "2"
+      DB_POOL_TIMEOUT: "5"
+      DB_POOL_RECYCLE: "300"
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      JWT_SECRET: ci-test-secret-key-not-for-production
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRATION_MINUTES: "60"
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
