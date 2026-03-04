@@ -2,9 +2,10 @@
 
 # Logistics AI Optimizer
 
-**A production-grade distributed AI platform for real-time route optimization, vehicle tracking, and ML-powered logistics intelligence.**
+**A distributed, production-grade logistics optimization platform powered by AI, real-time event streaming, and Kubernetes-native deployment.**
 
 [![CI](https://github.com/your-org/logistics-ai-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/logistics-ai-optimizer/actions/workflows/ci.yml)
+[![CD](https://github.com/your-org/logistics-ai-optimizer/actions/workflows/deploy.yml/badge.svg)](https://github.com/your-org/logistics-ai-optimizer/actions/workflows/deploy.yml)
 [![Python 3.9](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.128-green.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -15,343 +16,621 @@
 
 ## Table of Contents
 
-- [Project Overview](#project-overview)
-- [Architecture Overview](#architecture-overview)
-- [Tech Stack](#tech-stack)
-- [Features](#features)
-- [System Components](#system-components)
-- [Repository Structure](#repository-structure)
-- [API Endpoints](#api-endpoints)
-- [Getting Started](#getting-started)
-- [Deployment Guide](#deployment-guide)
-- [Performance Testing](#performance-testing)
-- [Monitoring](#monitoring)
-- [Future Improvements](#future-improvements)
+1. [Project Overview](#1-project-overview)
+2. [System Architecture](#2-system-architecture)
+3. [Features](#3-features)
+4. [Project Structure](#4-project-structure)
+5. [Installation Guide](#5-installation-guide)
+6. [Running the System](#6-running-the-system)
+7. [Kubernetes Deployment](#7-kubernetes-deployment)
+8. [Load Testing](#8-load-testing)
+9. [CI/CD Pipeline](#9-cicd-pipeline)
+10. [Future Improvements](#10-future-improvements)
 
 ---
 
-## Project Overview
+## 1. Project Overview
 
-The **Logistics AI Optimizer** is a distributed backend platform built to handle the computational demands of modern supply-chain operations at scale. The system processes real-time GPS events from a vehicle fleet, runs ML-based ETA and demand predictions in under 50 ms, and continuously re-optimizes delivery routes as traffic conditions change.
+The **Logistics AI Optimizer** is a distributed platform that optimizes logistics operations at scale — covering shipment lifecycle management, real-time vehicle tracking, warehouse inventory control, and AI-driven route optimization.
 
-**Key capabilities:**
+The system is designed from the ground up for production environments: it is multi-tenant, horizontally scalable, and hardened against common failure modes such as network partitions, duplicate message delivery, and cascading service outages.
 
-- Real-time vehicle tracking via Kafka event streaming (10 000+ events/sec throughput)
-- Sub-50 ms ML inference using NVIDIA Triton Inference Server
-- Distributed background processing with Celery + Redis (route optimization, model training)
-- Multi-tenant SaaS architecture with row-level tenant isolation
-- Full observability stack: Prometheus metrics + Grafana dashboards + OpenTelemetry tracing
-- Production-hardened: circuit breakers, retry policies, graceful shutdown, zero-downtime deploys
+**What it solves:**
+
+- **Shipment delays** — ML-predicted ETAs and dynamic re-routing minimize late deliveries
+- **Inventory waste** — Demand forecasting models balance stock levels across warehouses
+- **Dispatcher bottlenecks** — Route optimization runs asynchronously via Celery workers, freeing operators from manual planning
+- **Observability gaps** — End-to-end request tracing, Prometheus metrics, and Grafana dashboards give full visibility into system health
+
+**Built for scale:**
+
+| Metric | Target |
+|---|---|
+| Kafka event throughput | 10 000+ events / sec |
+| API request latency (p95) | < 150 ms |
+| ML ETA inference latency | < 50 ms |
+| Celery task queue depth | ≤ 50 pending (HPA triggers above this) |
+| Test coverage | 32 tests across API, inventory, and ML layers |
 
 ---
 
-## Architecture Overview
+## 2. System Architecture
+
+The platform follows a layered event-driven architecture. Synchronous API calls handle user-facing reads and writes; long-running work (route optimization, ML inference, model training) is offloaded to Celery workers via Redis. Kafka carries all real-time event streams — vehicle telemetry, delivery status changes, and inventory updates.
 
 ```
-                          ┌─────────────────────────────────────────────────┐
-                          │              Kubernetes Cluster                  │
-                          │                                                  │
-  Mobile / IoT apps ─────►│  NGINX Ingress (TLS, rate-limit, CORS)          │
-  Web frontend            │        │                                         │
-  Partner APIs            │        ▼                                         │
-                          │  ┌─────────────┐   ┌──────────────────────────┐ │
-                          │  │  FastAPI    │──►│  Kafka Event Bus          │ │
-                          │  │  (2-10 pods)│   │  vehicle-location-topic   │ │
-                          │  └──────┬──────┘   │  route-optimization-topic │ │
-                          │         │           │  ai-prediction-topic      │ │
-                          │         │           └────────────┬─────────────┘ │
-                          │         │                        │                │
-                          │  ┌──────▼──────┐        ┌───────▼──────────┐    │
-                          │  │   Redis     │        │  Celery Workers   │    │
-                          │  │  (broker +  │◄───────│  (2-8 pods, HPA) │    │
-                          │  │   cache)    │        └───────┬──────────┘    │
-                          │  └─────────────┘                │                │
-                          │                         ┌────────┴──────────┐    │
-                          │                         │                   │    │
-                          │                  ┌──────▼──────┐  ┌────────▼──┐ │
-                          │                  │  Feature    │  │  MinIO    │ │
-                          │                  │  Store      │  │  Data     │ │
-                          │                  │  (SQL+Redis)│  │  Lake     │ │
-                          │                  └──────┬──────┘  └───────────┘ │
-                          │                         │                        │
-                          │                  ┌──────▼──────┐                 │
-                          │                  │   Triton    │                 │
-                          │                  │  Inference  │                 │
-                          │                  │  Server     │                 │
-                          │                  └─────────────┘                 │
-                          │                                                  │
-                          │  ┌───────────────┐   ┌─────────┐  ┌──────────┐ │
-                          │  │ Azure SQL Edge│   │Prometheus│  │ Grafana  │ │
-                          │  │  (primary +   │   │ metrics  │  │dashboards│ │
-                          │  │   replica)    │   └─────────┘  └──────────┘ │
-                          │  └───────────────┘                              │
-                          └─────────────────────────────────────────────────┘
+  +---------------------------------------------------------+
+  |                       Clients                           |
+  |          Web Dashboard . Mobile Apps . Partner APIs     |
+  +---------------------------+-----------------------------+
+                              |  HTTPS
+                              v
+  +---------------------------------------------------------+
+  |                  FastAPI  (port 8000)                   |
+  |  Auth . Warehouses . Shipments . Audit . Health         |
+  |  TenantMiddleware . SlowAPI rate-limiter . OpenTelemetry|
+  +------------+----------------------------+---------------+
+               |                            |
+        +------v------+             +-------v------+
+        |    Redis    |             |    Kafka     |
+        |  Cache +    |             |  Event Bus   |
+        |  Task Broker|             |              |
+        +------+------+             | * vehicle-   |
+               |                   |   location   |
+        +------v------------------+| * route-opt  |
+        |   Celery Workers       |<| * ai-predict |
+        |                        | | * delivery-  |
+        | * optimize_routes      | |   status     |
+        | * run_ai_prediction    | +--------------+
+        | * model_training       |
+        +------+-----------------+
+               |
+        +------v------------------+
+        |   AI Route Optimizer    |
+        |                         |
+        | * ETA Model (R2=0.98)   |
+        | * Demand Forecaster     |
+        | * OR-Tools Solver       |
+        +------+------------------+
+               |
+  +------------v--------------------------------------------+
+  |                     Data Layer                          |
+  |   Azure SQL Edge (primary + replica)  .  MinIO Lake     |
+  |   Alembic migrations  .  SQLAlchemy 2.0 ORM             |
+  +---------------------------------------------------------+
+
+  +---------------------------------------------------------+
+  |                   Observability                         |
+  |   Prometheus (metrics)  .  Grafana (dashboards)        |
+  |   OpenTelemetry Collector  .  Structured JSON logging  |
+  +---------------------------------------------------------+
 ```
 
-> For a detailed interactive diagram see [docs/architecture.md](docs/architecture.md).
+**Data flow — shipment creation example:**
+
+1. Client POSTs to `POST /shipments/` with an `Idempotency-Key` header
+2. FastAPI validates the JWT, resolves the tenant, and persists the shipment record
+3. A Celery task `optimize_routes` is dispatched via Redis
+4. The worker fetches the vehicle fleet state and calls the AI Route Optimizer
+5. Optimized routes are written back to the database and cached in Redis
+6. A `route-optimization-topic` Kafka event notifies downstream consumers
 
 ---
 
-## Tech Stack
+## 3. Features
 
-| Layer | Technology | Purpose |
-|---|---|---|
-| **API** | FastAPI 0.128, Python 3.9 | Async HTTP API, OpenAPI docs |
-| **Database** | Azure SQL Edge, SQLAlchemy 2.0 | Primary + replica read/write split |
-| **Migrations** | Alembic | Schema versioning |
-| **Cache / Broker** | Redis 7 | Session cache, Celery task broker |
-| **Event Streaming** | Apache Kafka (KRaft) | Real-time event bus |
-| **Background Workers** | Celery 5.4, Flower | Distributed task execution |
-| **ML Inference** | NVIDIA Triton Server | batched model serving < 50 ms |
-| **Feature Store** | SQL + Redis (custom) | Training-serving feature parity |
-| **Object Storage** | MinIO (S3-compatible) | Training data, model artefacts |
-| **Observability** | Prometheus, Grafana, OpenTelemetry | Metrics, tracing, dashboards |
-| **Containerisation** | Docker, Docker Compose | Local + CI environments |
-| **Orchestration** | Kubernetes (k8s) | Production deployment, HPA |
-| **Ingress** | NGINX Ingress + cert-manager | TLS termination, rate limiting |
-| **CI/CD** | GitHub Actions | Lint, test, build, deploy |
-| **Load Testing** | k6 | Performance benchmarking |
+### Shipment Management
+Create, read, update, and soft-delete shipments with full tenant isolation. Every mutation is appended to an immutable audit log. Idempotency keys prevent duplicate creation on network retries.
 
----
+### Inventory Management
+Track stock levels per warehouse with real-time reads from the Feature Store (SQL + Redis). Inventory update events published to Kafka keep all service replicas in sync without polling.
 
-## Features
-
-### Real-Time Vehicle Tracking
-- Ingest GPS location events at 10 000+ events/sec via Kafka
-- Per-vehicle partition key preserves event ordering
-- Live vehicle speed and traffic score written to the Feature Store on every event
+### Vehicle Tracking
+Ingest GPS telemetry from truck simulators via `POST /streaming/vehicle-location`. Events are published to Kafka's `vehicle-location-topic` with per-vehicle partition keys to preserve ordering. A multi-threaded truck simulator (`simulator/truck_sim.py`) generates realistic telemetry for development and load testing.
 
 ### Route Optimization
-- Celery workers run Google OR-Tools optimization asynchronously
-- Triggers issued via Kafka `route-optimization-topic`
-- Results cached in Redis for sub-millisecond re-reads
+Dispatch asynchronous route-optimization jobs via `POST /workers/optimize-route`. Workers use Google OR-Tools to compute minimum-cost routes given the current vehicle positions and pending shipments. Results are cached in Redis for sub-millisecond re-reads by the dashboard.
 
-### ML Inference Pipeline
-- NVIDIA Triton serves `eta_model` and `demand_model` over HTTP v2
-- Feature vector assembled from the Feature Store in a single SQL batch read
-- Batch inference endpoint handles entire fleet predictions in one Triton call
+### Real-Time Telemetry
+Kafka-backed streaming endpoints accept vehicle location, delivery status, and inventory update events. The OpenTelemetry Collector receives OTLP traces from FastAPI and exports them to Prometheus for latency visibility.
 
-### Multi-Tenant SaaS
-- Tenant ID extracted from JWT; every SQL query filtered via SQLAlchemy event hooks
-- Row-level isolation prevents cross-tenant data leakage
-- Per-tenant rate limiting via slowapi
+### Analytics Dashboard
+A Flask-powered frontend with a Chart.js analytics page (`/analytics`) renders four live charts — shipment volume, delivery performance, inventory turnover, and vehicle utilization — fed by the `/api/analytics/data` endpoint. Eight KPI cards give a summary view of operational health.
 
-### Production Hardened
-- Circuit breakers (`pybreaker`) on DB and external service calls
-- Idempotency table prevents duplicate task execution on retry
-- Soft-delete on all domain entities; hard audit log for every mutation
-- Zero-downtime rolling deploys (`maxUnavailable: 0`) with `PodDisruptionBudget`
+### AI Prediction System
+A scikit-learn ETA model (`ml_engine/eta_model.py`) trained on generated logistics data achieves R2 = 0.98 against a held-out test set. The model predicts package arrival times from distance, cargo weight, weather severity, and traffic scores. Training scripts in `ml_engine/` serialise trained models to `ml_engine/models/` for serving.
 
 ---
 
-## System Components
-
-| Component | File(s) | Description |
-|---|---|---|
-| API server | `backend/main.py` | FastAPI app, middleware, router registration |
-| Auth | `backend/api/auth_routes.py` | JWT-based login, registration |
-| Warehouses | `backend/api/warehouse_routes.py` | CRUD with tenant isolation |
-| Shipments | `backend/api/shipment_routes.py` | Shipment lifecycle |
-| Streaming | `backend/api/streaming_routes.py` | Kafka event ingestion endpoints |
-| Workers | `backend/api/worker_routes.py` | Celery task dispatch & status |
-| Kafka Producer | `backend/streaming/kafka_producer.py` | Thread-safe `publish_event()` |
-| Kafka Consumer | `backend/streaming/kafka_consumer.py` | Reconnect loop, SIGTERM handling |
-| Feature Store | `backend/ml/features/feature_store.py` | SQL UPSERT + Redis cache |
-| Model Client | `backend/ml/models/model_client.py` | Triton HTTP v2 client, retry |
-| Inference | `backend/ml/models/inference_service.py` | `predict_eta`, `batch_predict_eta` |
-| Data Lake | `backend/storage/data_lake.py` | MinIO upload/download via boto3 |
-| Celery App | `backend/workers/celery_app.py` | Celery configuration |
-| Tasks | `backend/workers/tasks.py` | optimize_routes, run_ai_prediction |
-| DB Models | `database/models.py` | SQLAlchemy ORM models |
-| Config | `backend/core/config.py` | pydantic-settings, 27 fields |
-
----
-
-## Repository Structure
+## 4. Project Structure
 
 ```
-logistics-ai-optimizer/
-│
-├── backend/                  # FastAPI application
-│   ├── api/                  # Route handlers (one file per domain)
-│   ├── core/                 # Config, security, middleware, metrics
-│   ├── ml/
-│   │   ├── features/         # Feature Store (SQL + Redis)
-│   │   └── models/           # Triton model client + inference service
-│   ├── services/             # Business logic (shipment, warehouse, etc.)
-│   ├── storage/              # Data lake (MinIO)
-│   ├── streaming/            # Kafka producer + consumer
-│   └── workers/              # Celery app + task definitions
-│
-├── database/                 # SQLAlchemy models, connection, migrations
-├── alembic/                  # Alembic migration scripts
-├── k8s/                      # Kubernetes manifests (9 YAML files, 14 resources)
-├── docker/                   # Dockerfiles for specialised images
-├── infrastructure/
-│   ├── prometheus/           # Scrape config
-│   └── grafana/              # Dashboard JSON
-├── load-tests/               # k6 performance test scripts
-├── docs/                     # Architecture, system design, API, deployment docs
-├── scripts/                  # Utility scripts (validation, ML pipeline demo)
-├── tests/                    # pytest test suite (32 tests)
-├── ml_engine/                # Offline training scripts
-├── simulator/                # Vehicle telemetry simulator
-├── monitoring/               # Prometheus config (Docker Compose target)
-├── .github/workflows/        # CI (ci.yml) + CD (deploy.yml)
-├── docker-compose.yml        # Development environment
-├── docker-compose.prod.yml   # Production environment (10 services)
-├── Dockerfile                # Multi-stage production image
-└── requirements.txt          # Python dependencies
+logistics_ai_optimizer/
+|
++-- backend/                        # FastAPI application
+|   +-- main.py                     # App factory, middleware, router registration
+|   +-- schemas.py                  # Pydantic request/response models
+|   +-- api/                        # Route handlers - one file per domain
+|   |   +-- auth_routes.py          # JWT login + registration
+|   |   +-- health_routes.py        # /health/live and /health/ready probes
+|   |   +-- warehouse_routes.py     # Warehouse CRUD
+|   |   +-- shipment_routes.py      # Shipment lifecycle
+|   |   +-- audit_routes.py         # Audit log retrieval
+|   +-- core/                       # Cross-cutting concerns
+|   |   +-- config.py               # pydantic-settings (27 environment fields)
+|   |   +-- security.py             # JWT signing + verification
+|   |   +-- tenant_middleware.py    # Multi-tenant request context injection
+|   |   +-- redis_client.py         # Redis connection pool
+|   |   +-- metrics.py              # Prometheus counter + histogram definitions
+|   |   +-- logging_config.py       # Structured JSON logger setup
+|   |   +-- db_retry.py             # Exponential back-off DB retry decorator
+|   |   +-- queue.py                # Celery app + task broker configuration
+|   +-- services/                   # Business logic layer
+|   |   +-- shipment_service.py
+|   |   +-- warehouse_service.py
+|   |   +-- inventory_service.py
+|   |   +-- dispatch_service.py
+|   |   +-- audit_service.py
+|   +-- tasks/                      # Celery task definitions
+|   |   +-- shipment_tasks.py
+|   +-- background/                 # Background startup routines
+|   +-- ml/                         # ML integration hooks
+|
++-- database/                       # Data access layer
+|   +-- models.py                   # SQLAlchemy ORM models
+|   +-- connection.py               # Engine, session factory, health check
+|   +-- migrations/                 # Legacy migration scripts
+|
++-- alembic/                        # Alembic schema migrations
+|   +-- env.py
+|   +-- versions/                   # 7 migration scripts
+|
++-- ml_engine/                      # Offline ML training
+|   +-- data_generator.py           # Synthetic logistics dataset generator
+|   +-- train_eta.py                # ETA model training script
+|   +-- train_dispatch.py           # Dispatch optimizer training
+|   +-- train_demand.py             # Demand forecasting training
+|   +-- models/                     # Serialised .pkl model artefacts
+|   +-- training/                   # Training run outputs + metrics
+|
++-- frontend/                       # Flask web dashboard
+|   +-- app.py                      # Flask app, routes, API proxy endpoints
+|   +-- templates/                  # Jinja2 HTML templates
+|   +-- static/js/
+|       +-- utils.js                # Shared fetch helpers + formatters
+|       +-- analytics.js            # Chart.js chart initialisation
+|
++-- simulator/                      # Vehicle telemetry simulator
+|   +-- truck_sim.py                # Multi-threaded GPS event generator
+|   +-- utils.py                    # Coordinate helpers + telemetry formatters
+|
++-- tests/                          # pytest test suite
+|   +-- test_api.py                 # FastAPI endpoint tests (mocked DB)
+|   +-- test_inventory.py           # Inventory service unit tests
+|   +-- test_ml.py                  # ML model accuracy + feature tests
+|   +-- load_test.py                # Locust load test (3 user classes, 11 tasks)
+|
++-- k8s/                            # Kubernetes manifests
+|   +-- namespace.yaml
+|   +-- configmap.yaml
+|   +-- secrets.yaml
+|   +-- redis-deployment.yaml
+|   +-- api-deployment.yaml
+|   +-- celery-deployment.yaml
+|   +-- services.yaml
+|   +-- ingress.yaml
+|   +-- hpa.yaml                    # Horizontal Pod Autoscaler
+|
++-- redis_layer/                    # Redis abstraction helpers
+|   +-- cache.py
+|
++-- docs/
+|   +-- SCALING_STRATEGY.md
+|
++-- .github/workflows/
+|   +-- ci.yml                      # Test + lint on all branches
+|   +-- deploy.yml                  # GHCR build + Kubernetes CD
+|   +-- ci-cd.yml                   # Unified pipeline: test, build, scan, push, deploy
+|
++-- docker-compose.yml              # Local dev: SQL Edge + Redis + OTEL Collector
++-- Dockerfile                      # Production image (python:3.9-slim)
++-- alembic.ini
++-- pyproject.toml                  # pytest configuration
++-- requirements.txt                # Python dependencies
 ```
 
 ---
 
-## API Endpoints
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `POST` | `/auth/register` | — | Register a new user |
-| `POST` | `/auth/login` | — | Obtain JWT token |
-| `GET` | `/health/live` | — | Liveness probe |
-| `GET` | `/health/ready` | — | Readiness probe (DB + Redis check) |
-| `GET` | `/warehouses/` | JWT | List tenant warehouses |
-| `POST` | `/warehouses/` | JWT | Create warehouse |
-| `GET` | `/warehouses/{id}` | JWT | Get warehouse by ID |
-| `DELETE` | `/warehouses/{id}` | JWT | Soft-delete warehouse |
-| `POST` | `/workers/optimize-route` | JWT | Dispatch route optimization task |
-| `POST` | `/workers/run-ai-prediction` | JWT | Dispatch AI prediction task |
-| `GET` | `/workers/task/{task_id}` | JWT | Poll Celery task status |
-| `POST` | `/streaming/vehicle-location` | JWT | Publish GPS event to Kafka |
-| `POST` | `/streaming/delivery-status` | JWT | Publish delivery lifecycle event |
-| `POST` | `/streaming/inventory-update` | JWT | Publish stock change event |
-| `POST` | `/streaming/trigger-route-optimization` | JWT | Trigger route recalculation |
-| `POST` | `/streaming/trigger-ai-prediction` | JWT | Trigger ML prediction job |
-| `GET` | `/audit/` | JWT | Retrieve tenant audit log |
-| `GET` | `/metrics` | — | Prometheus metrics scrape endpoint |
-
-See [docs/api.md](docs/api.md) for full request/response examples.
-
----
-
-## Getting Started
+## 5. Installation Guide
 
 ### Prerequisites
 
-- Docker Desktop ≥ 4.x
-- Python 3.9+
-- `kubectl` (for Kubernetes deployment)
-- `k6` (for load testing)
+| Tool | Minimum version |
+|---|---|
+| Python | 3.9 |
+| Docker Desktop | 4.x |
+| kubectl | 1.28 |
+| git | 2.x |
 
-### Local Development
+### Step 1 — Clone the repository
 
 ```bash
-# Clone the repository
 git clone https://github.com/your-org/logistics-ai-optimizer.git
 cd logistics-ai-optimizer
+```
 
-# Create virtual environment
-python -m venv venv && source venv/bin/activate
+### Step 2 — Create a virtual environment
 
-# Install dependencies
+```bash
+python -m venv venv
+source venv/bin/activate          # macOS / Linux
+# venv\Scripts\activate           # Windows
+```
+
+### Step 3 — Install dependencies
+
+```bash
+pip install --upgrade pip
 pip install -r requirements.txt
+```
 
-# Copy and edit environment config
-cp .env.prod.example .env
+### Step 4 — Configure environment variables
 
-# Start all services
+```bash
+cp .env.example .env
+```
+
+Open `.env` and set the required values:
+
+```dotenv
+# Database
+DB_USER=sa
+DB_PASSWORD=YourStrong!Passw0rd
+DB_SERVER=localhost
+DB_PORT=1433
+DB_NAME=logistics_db
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# Auth
+JWT_SECRET=your-secret-key-change-in-production
+JWT_ALGORITHM=HS256
+JWT_EXPIRATION_MINUTES=60
+
+# App
+APP_ENV=development
+DEBUG=true
+API_HOST=0.0.0.0
+API_PORT=8000
+```
+
+### Step 5 — Start infrastructure with Docker Compose
+
+```bash
 docker compose up -d
+```
 
-# Run database migrations
+This starts:
+- **Azure SQL Edge** on port `1433`
+- **Redis** on port `6379`
+- **OpenTelemetry Collector** on ports `4317` (gRPC) and `4318` (HTTP)
+
+### Step 6 — Run database migrations
+
+```bash
 alembic upgrade head
+```
 
-# Start the API (hot-reload)
+This applies all 7 migration scripts in `alembic/versions/` — creating tables for users,
+tenants, shipments, warehouses, inventory, audit logs, and idempotency keys.
+
+---
+
+## 6. Running the System
+
+### Start the backend API
+
+```bash
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Run Tests
+The API is now available at:
+
+| URL | Description |
+|---|---|
+| `http://localhost:8000/docs` | Interactive Swagger UI |
+| `http://localhost:8000/redoc` | ReDoc API reference |
+| `http://localhost:8000/health/live` | Liveness probe |
+| `http://localhost:8000/health/ready` | Readiness probe (checks DB + Redis) |
+| `http://localhost:8000/metrics` | Prometheus scrape endpoint |
+
+### Start the frontend dashboard
+
+Open a second terminal (with the venv activated):
+
+```bash
+python frontend/app.py
+```
+
+The Flask dashboard is now available at `http://localhost:5000`.
+
+| Page | Route | Description |
+|---|---|---|
+| Dashboard | `/` | KPI summary + live shipment table |
+| Analytics | `/analytics` | Chart.js charts — volume, performance, inventory, utilization |
+| Vehicles | `/vehicles` | Real-time vehicle tracking map |
+| Shipments | `/shipments` | Shipment management table |
+| Warehouses | `/warehouses` | Warehouse inventory overview |
+
+### Run the truck telemetry simulator
+
+```bash
+python -m simulator.truck_sim
+```
+
+Spawns configurable threads, each simulating a truck reporting GPS coordinates, speed,
+fuel level, and cargo weight to the Kafka `vehicle-location-topic` at a fixed interval.
+
+### Run tests
 
 ```bash
 pytest -v
 ```
 
+### Train the ETA model
+
+```bash
+python ml_engine/train_eta.py
+```
+
+Generates a synthetic logistics dataset, trains a Random Forest ETA model, evaluates it
+(R2 approx 0.98), and serialises the model to `ml_engine/models/eta_model.pkl`.
+
 ---
 
-## Deployment Guide
+## 7. Kubernetes Deployment
 
-See [docs/deployment.md](docs/deployment.md) for complete instructions covering:
+All Kubernetes manifests are in the `k8s/` directory. Apply them in dependency order:
 
-- Single-node Docker Compose (`docker-compose.prod.yml`)
-- Kubernetes deployment (`k8s/`)
-- Rolling updates & zero-downtime deploys
-- Scaling workers and API pods
-
-Quick Kubernetes deploy:
+### Step 1 — Create the namespace
 
 ```bash
 kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/configmap.yaml -f k8s/secrets.yaml
-kubectl apply -f k8s/redis-deployment.yaml -f k8s/services.yaml
-kubectl apply -f k8s/api-deployment.yaml -f k8s/celery-deployment.yaml
-kubectl apply -f k8s/ingress.yaml -f k8s/hpa.yaml
 ```
 
----
+All resources are deployed to the `logistics-ai` namespace.
 
-## Performance Testing
-
-Load tests are in `load-tests/k6_tests.js` using the [k6](https://k6.io/) framework.
-
-| Scenario | VUs | Duration | Target RPS |
-|---|---|---|---|
-| Smoke | 10 | 30 s | baseline |
-| Load | 100 | 2 min | 100 req/s |
-| Stress | 500 | 3 min | 500 req/s |
-| Spike | 1000 | 1 min | burst test |
+### Step 2 — Apply configuration and secrets
 
 ```bash
-# Install k6
-brew install k6
-
-# Run load test
-k6 run load-tests/k6_tests.js
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/secrets.yaml
 ```
 
-See [docs/api.md](docs/api.md) for expected performance benchmarks.
+> **Note:** Before applying `secrets.yaml`, replace the placeholder base64 values:
+> ```bash
+> echo -n "YourStrong!Passw0rd" | base64
+> ```
+
+### Step 3 — Deploy Redis
+
+```bash
+kubectl apply -f k8s/redis-deployment.yaml
+kubectl apply -f k8s/services.yaml
+```
+
+### Step 4 — Deploy the API and Celery workers
+
+```bash
+kubectl apply -f k8s/api-deployment.yaml
+kubectl apply -f k8s/celery-deployment.yaml
+```
+
+### Step 5 — Expose the API via Ingress
+
+```bash
+kubectl apply -f k8s/ingress.yaml
+```
+
+### Step 6 — Enable autoscaling
+
+```bash
+kubectl apply -f k8s/hpa.yaml
+```
+
+The Horizontal Pod Autoscaler scales the API deployment between 2 and 10 replicas
+based on CPU utilization (target 60%).
+
+### Verify deployment
+
+```bash
+kubectl get pods -n logistics-ai
+kubectl get services -n logistics-ai
+kubectl get ingress -n logistics-ai
+```
+
+### Rolling updates
+
+```bash
+kubectl set image deployment/logistics-api \
+  api=<registry>/logistics-ai-optimizer:<new-tag> \
+  -n logistics-ai
+
+kubectl rollout status deployment/logistics-api -n logistics-ai --timeout=300s
+```
+
+### Rollback
+
+```bash
+kubectl rollout undo deployment/logistics-api -n logistics-ai
+kubectl rollout undo deployment/logistics-celery -n logistics-ai
+```
 
 ---
 
-## Monitoring
+## 8. Load Testing
 
-| Dashboard | URL | Credentials |
+Load tests are written with [Locust](https://locust.io/) and located in `tests/load_test.py`.
+
+### User classes
+
+| Class | Description | Wait time |
 |---|---|---|
-| Grafana | http://localhost:3000 | admin / admin (change in `.env.prod`) |
-| Prometheus | http://localhost:9090 | — |
-| Flower (Celery) | http://localhost:5555/flower | — |
-| MinIO Console | http://localhost:9001 | minioadmin / minioadmin |
-| FastAPI Docs | http://localhost:8000/docs | — |
+| `LogisticsUser` | Balanced mix of 11 tasks (reads + writes + streaming) | 1 to 3 s |
+| `ReadOnlyLogisticsUser` | Read-only subset (shipments, inventory, telemetry) | 1 to 3 s |
+| `WriteHeavyLogisticsUser` | Write-intensive (create shipments, dispatch optimization) | 0.5 to 1.5 s |
 
-Key metrics tracked:
+### Task breakdown (`LogisticsUser`)
 
-- `http_requests_total` — API throughput by endpoint and status code
-- `http_request_duration_seconds` — p50/p95/p99 latency
-- `celery_queue_length` — pending tasks per queue
-- `kafka_consumer_lag` — event processing backlog
-- `triton_inference_latency_ms` — ML inference latency
+| Task | Weight | Endpoint |
+|---|---|---|
+| `get_shipments` | 4 | `GET /shipments/` |
+| `get_vehicle_telemetry` | 3 | `GET /vehicles/telemetry` |
+| `get_analytics_summary` | 3 | `GET /analytics/summary` |
+| `get_inventory` | 2 | `GET /warehouses/{id}/inventory` |
+| `create_shipment` | 1 | `POST /shipments/` (with `Idempotency-Key`) |
+| `publish_vehicle_gps` | 1 | `POST /streaming/vehicle-location` |
+| `publish_delivery_status` | 1 | `POST /streaming/delivery-status` |
+| `publish_inventory_update` | 1 | `POST /streaming/inventory-update` |
+| `dispatch_optimize_route` | 1 | `POST /workers/optimize-route` then poll task status |
+| `get_audit_log` | 1 | `GET /audit/` |
+| `health_check` | 1 | `GET /health/live` |
+
+`on_start()` authenticates via `POST /auth/login` and stores the JWT for all subsequent
+requests. HTTP 429 (rate-limited) and 503 (Kafka unavailable in dev) are treated as
+expected results and do not count as failures.
+
+### Running load tests
+
+```bash
+# Run with the web UI at http://localhost:8089
+locust -f tests/load_test.py
+
+# Headless — 100 users ramping over 30 s, run for 2 min
+locust -f tests/load_test.py \
+  --headless --users 100 --spawn-rate 10 --run-time 2m \
+  --host http://localhost:8000
+
+# Read-only scenario
+locust -f tests/load_test.py ReadOnlyLogisticsUser \
+  --headless --users 200 --spawn-rate 20 --run-time 3m \
+  --host http://localhost:8000
+
+# Write-heavy scenario
+locust -f tests/load_test.py WriteHeavyLogisticsUser \
+  --headless --users 50 --spawn-rate 5 --run-time 1m \
+  --host http://localhost:8000
+```
+
+The web UI provides real-time RPS, failure rate, and response-time percentile charts.
 
 ---
 
-## Future Improvements
+## 9. CI/CD Pipeline
 
-| Item | Priority | Effort |
+Three GitHub Actions workflows automate the full software delivery lifecycle.
+
+### Workflow overview
+
+| File | Trigger | Purpose |
 |---|---|---|
-| Avro + Schema Registry for Kafka messages | High | Medium |
-| KEDA queue-depth autoscaler for Celery workers | High | Low |
-| GPU-enabled Triton pods for inference acceleration | Medium | Medium |
-| gRPC API for internal service-to-service calls | Medium | Medium |
-| A/B model routing (shadow mode, canary) | Medium | High |
-| Real-time WebSocket dashboard for fleet tracking | Low | Medium |
-| Drift detection pipeline for deployed models | Low | High |
-| Terraform IaC for cloud infra provisioning | Low | Medium |
+| `ci.yml` | Push to any branch, PRs | Lint (flake8) + test (pytest) |
+| `deploy.yml` | Push to `main`, `workflow_dispatch` | Build (GHCR) then Trivy scan then k8s deploy |
+| `ci-cd.yml` | Push to `main`, PRs to `main` | **Unified 5-stage pipeline (DockerHub)** |
+
+### `ci-cd.yml` stage breakdown
+
+```
+push to main / PR to main
+        |
+        v
++----------------------------+
+| Stage 1 - Test             |  Python 3.9, pip install, flake8, pytest -v
+|                            |  Runs on ALL triggers (PRs + main)
++------------+---------------+
+             | needs: test
+             v
++----------------------------+
+| Stage 2 - Build            |  docker buildx (linux/amd64 + linux/arm64)
+|                            |  GHA layer cache, exports image as artifact
++------------+---------------+
+             | needs: build
+             v
++----------------------------+
+| Stage 3 - Trivy Scan       |  Loads image artifact, uploads SARIF to
+|                            |  GitHub Security tab, fails on CRITICAL CVEs
++------------+---------------+
+             | needs: build + scan  (main only)
+             v
++----------------------------+
+| Stage 4 - Push             |  Login with DOCKER_USERNAME / DOCKER_PASSWORD
+|                            |  Tags: <username>/logistics-ai-optimizer:<sha>
+|                            |        <username>/logistics-ai-optimizer:latest
++------------+---------------+
+             | needs: push  (main only)
+             v
++----------------------------+
+| Stage 5 - Deploy           |  kubectl apply -f k8s/
+|                            |  Rolling image update on api + celery
+|                            |  Rollout wait, smoke test, auto-rollback
+|                            |  Skips gracefully if KUBECONFIG is absent
++----------------------------+
+```
+
+### Required secrets
+
+Configure these in **GitHub > Repository Settings > Secrets and Variables > Actions**:
+
+| Secret | Required | Description |
+|---|---|---|
+| `DOCKER_USERNAME` | Yes (stages 4-5) | DockerHub username |
+| `DOCKER_PASSWORD` | Yes (stages 4-5) | DockerHub access token |
+| `KUBECONFIG` | Optional (stage 5) | Base64-encoded kubeconfig |
+| `SLACK_WEBHOOK_URL` | Optional | Slack incoming webhook |
+
+### Generating the base64 kubeconfig
+
+```bash
+# macOS
+cat ~/.kube/config | base64 | pbcopy
+
+# Linux
+cat ~/.kube/config | base64
+```
+
+Paste the output as the `KUBECONFIG` secret value in GitHub.
+
+---
+
+## 10. Future Improvements
+
+### ML and AI
+
+| Improvement | Description |
+|---|---|
+| **ML demand forecasting** | Train LSTM/Prophet models on historical shipment data to predict weekly demand per warehouse, enabling proactive stock redistribution before shortfalls occur |
+| **Real-time route optimization** | Replace the current batch OR-Tools solver with an online RL agent (PPO via Stable-Baselines3) that continuously updates routes as new GPS events arrive |
+| **A/B model routing** | Deploy shadow and canary model variants behind the inference service for safe, data-driven model promotions |
+| **Drift detection pipeline** | Monitor live feature distributions against training distributions using Evidently AI; trigger automated retraining on drift |
+
+### Infrastructure and Scale
+
+| Improvement | Description |
+|---|---|
+| **Global logistics simulation** | Extend the truck simulator to generate multi-country, multi-timezone fleets with realistic road networks (OpenStreetMap data) |
+| **KEDA autoscaler for Celery** | Replace CPU-based HPA with KEDA keyed on Redis queue depth for true zero-to-burst scaling |
+| **gRPC internal transport** | Replace HTTP calls between API and Celery result-backend with gRPC for lower overhead |
+| **Terraform IaC** | Codify all cloud infrastructure as Terraform modules for one-command environment provisioning |
+
+### Observability
+
+| Improvement | Description |
+|---|---|
+| **Distributed tracing (Jaeger)** | Propagate OpenTelemetry trace context through Kafka message headers for end-to-end request tracing across API, workers, and ML inference |
+| **SLO dashboards** | Define error-budget-based SLOs in Grafana (availability >= 99.9%, p95 latency <= 200 ms) with burn-rate alerts |
+| **Avro + Schema Registry** | Replace plain-JSON Kafka messages with Avro validated against Confluent Schema Registry |
 
 ---
 
@@ -359,10 +638,10 @@ Key metrics tracked:
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Commit: `git commit -m "feat: add my feature"`
-4. Push and open a Pull Request
+3. Commit using Conventional Commits: `git commit -m "feat: add my feature"`
+4. Push and open a Pull Request against `main`
 
-All PRs must pass CI (lint + 32 tests) before merge.
+All PRs must pass the full `ci.yml` pipeline (lint + 32 tests) before merge.
 
 ---
 
