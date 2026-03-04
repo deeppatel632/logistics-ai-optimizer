@@ -12,7 +12,7 @@ from backend.core.rate_limiter import limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi import _rate_limit_exceeded_handler
-from backend.api import audit_routes, auth_routes, health_routes, streaming_routes, warehouse_routes, worker_routes
+from backend.api import analytics_routes, audit_routes, auth_routes, health_routes, streaming_routes, warehouse_routes, worker_routes
 from backend.streaming.kafka_producer import close_producer
 from backend.core.logging_config import configure_logging
 from backend.core.metrics import REQUEST_COUNT, REQUEST_LATENCY
@@ -60,6 +60,7 @@ app.include_router(warehouse_routes.router)
 app.include_router(audit_routes.router)
 app.include_router(worker_routes.router)
 app.include_router(streaming_routes.router)
+app.include_router(analytics_routes.router)
 
 
 # ---------------------------------------------------

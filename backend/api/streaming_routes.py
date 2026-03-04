@@ -25,15 +25,48 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from backend.core.dependencies import get_current_tenant_id
 from backend.streaming.kafka_producer import publish_event
+from database.connection import get_read_db
+from database.models import Vehicle
 from kafka.errors import KafkaError
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/streaming", tags=["Streaming"])
+
+
+# ---------------------------------------------------------------------------
+# GET /streaming/vehicles  — realtime vehicle list for the tracking map
+# ---------------------------------------------------------------------------
+
+@router.get("/vehicles", summary="List all active vehicles with current GPS position")
+def list_vehicles(
+    db: Session = Depends(get_read_db),
+    tenant_id: int = Depends(get_current_tenant_id),
+):
+    """Return all non-deleted vehicles for the current tenant.  The Flask
+    dashboard vehicle-tracking map polls this endpoint every 5 seconds."""
+    vehicles = (
+        db.query(Vehicle)
+        .filter(Vehicle.tenant_id == tenant_id, Vehicle.is_deleted.is_(False))
+        .all()
+    )
+    return [
+        {
+            "id":                v.id,
+            "type":              v.type,
+            "status":            v.status,
+            "current_latitude":  v.current_latitude,
+            "current_longitude": v.current_longitude,
+            "tenant_id":         v.tenant_id,
+        }
+        for v in vehicles
+    ]
 
 
 # ---------------------------------------------------------------------------

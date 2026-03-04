@@ -37,8 +37,10 @@ class ShipmentResponse(BaseModel):
     id: int
     warehouse_id: int
     product_id: int
+    vehicle_id: Optional[int] = None
     quantity: int
     status: str
+    tenant_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
 

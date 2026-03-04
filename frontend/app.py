@@ -266,34 +266,27 @@ def api_warehouses():
 @app.route("/api/analytics/summary")
 @login_required
 def api_analytics_summary():
-    """Aggregate basic stats from multiple backend endpoints."""
-    summary: Dict[str, Any] = {}
-
+    """Proxy directly to the FastAPI /analytics/summary endpoint."""
     try:
-        wh = _api_get("/warehouses")
-        summary["total_warehouses"] = len(wh) if isinstance(wh, list) else 0
-    except Exception:
-        summary["total_warehouses"] = 0
+        data = _api_get("/analytics/summary")
+        return jsonify(data)
+    except httpx.HTTPStatusError as exc:
+        return jsonify({"error": str(exc)}), exc.response.status_code
+    except httpx.RequestError as exc:
+        return jsonify({"error": "backend unreachable"}), 503
 
+
+@app.route("/api/analytics/kpis")
+@login_required
+def api_analytics_kpis():
+    """Proxy to /analytics/kpis — warehouse utilisation + truck utilisation."""
     try:
-        sh = _api_get("/shipments")
-        if isinstance(sh, list):
-            summary["total_shipments"] = len(sh)
-            summary["pending"] = sum(1 for s in sh if s.get("status") == "Pending")
-            summary["in_transit"] = sum(1 for s in sh if s.get("status") == "InTransit")
-            summary["delivered"] = sum(1 for s in sh if s.get("status") == "Delivered")
-        else:
-            summary.update({"total_shipments": 0, "pending": 0, "in_transit": 0, "delivered": 0})
-    except Exception:
-        summary.update({"total_shipments": 0, "pending": 0, "in_transit": 0, "delivered": 0})
-
-    try:
-        health = _api_get("/health/ready")
-        summary["api_status"] = health.get("status", "unknown")
-    except Exception:
-        summary["api_status"] = "unknown"
-
-    return jsonify(summary)
+        data = _api_get("/analytics/kpis")
+        return jsonify(data)
+    except httpx.HTTPStatusError as exc:
+        return jsonify({"error": str(exc)}), exc.response.status_code
+    except httpx.RequestError as exc:
+        return jsonify({"error": "backend unreachable"}), 503
 
 
 @app.route("/api/vehicles/location", methods=["POST"])
@@ -301,7 +294,7 @@ def api_analytics_summary():
 def api_vehicle_location():
     payload = request.get_json(force=True)
     try:
-        data = _api_post("/streaming/location", payload)
+        data = _api_post("/streaming/vehicle-location", payload)
         return jsonify(data)
     except httpx.HTTPStatusError as exc:
         return jsonify({"error": exc.response.text}), exc.response.status_code
