@@ -22,5 +22,17 @@ services:
       - "6379:6379"
     restart: always
 
+  otel_collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: logistics_otel_collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4318:4318"   # OTLP HTTP receiver
+      - "4317:4317"   # OTLP gRPC receiver
+      - "8889:8889"   # Prometheus exporter (scrape OTEL metrics)
+    restart: always
+
 volumes:
   sql_data:
