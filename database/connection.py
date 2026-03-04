@@ -2,7 +2,6 @@
 
 import logging
 import time
-
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import declarative_base, sessionmaker, with_loader_criteria
@@ -17,7 +16,23 @@ logger = logging.getLogger(__name__)
 
 Base = declarative_base()
 
+primary_engine = create_engine(settings.primary_db_url, future=True)
+replica_engine = create_engine(settings.replica_db_url, future=True)
 
+
+# Write session (Primary DB)
+PrimarySessionLocal = sessionmaker(
+    bind=primary_engine,
+    autocommit=False,
+    autoflush=False,
+)
+
+# Read session (Replica DB)
+ReplicaSessionLocal = sessionmaker(
+    bind=replica_engine,
+    autocommit=False,
+    autoflush=False,
+)
 # -------------------------------
 # CONNECTION STRING BUILDER
 # -------------------------------
@@ -172,3 +187,26 @@ def _add_tenant_filter_criteria(execute_state) -> None:
                 include_aliases=True,
             )
         )
+
+
+def get_write_db():
+    db = PrimarySessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def get_read_db():
+    db = ReplicaSessionLocal()
+    try:
+        yield db
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
