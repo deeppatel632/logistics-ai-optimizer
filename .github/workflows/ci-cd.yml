@@ -1,0 +1,391 @@
+# ============================================================
+# CI/CD Pipeline — Logistics AI Optimizer
+# ============================================================
+# Stages:
+#   1. test     — install deps, lint, run pytest
+#   2. build    — docker build (linux/amd64 + linux/arm64)
+#   3. scan     — trivy vulnerability scan
+#   4. push     — push image to DockerHub
+#   5. deploy   — rolling update on Kubernetes cluster
+#
+# Required secrets (set in GitHub repo → Settings → Secrets):
+#   DOCKER_USERNAME   — DockerHub username
+#   DOCKER_PASSWORD   — DockerHub access token (not password)
+#   KUBECONFIG        — base64-encoded kubeconfig for k8s access
+#
+# Optional secrets (pipeline degrades gracefully without them):
+#   SLACK_WEBHOOK_URL — Slack incoming webhook for deploy alerts
+# ============================================================
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - staging
+
+concurrency:
+  group: cicd-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}  # cancel PRs, never cancel main deploys
+
+env:
+  IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/logistics-ai-optimizer
+  K8S_NAMESPACE: logistics-ai
+
+# ─────────────────────────────────────────────────────────────
+# STAGE 1 — INSTALL DEPENDENCIES + TEST
+# ─────────────────────────────────────────────────────────────
+jobs:
+  test:
+    name: "Stage 1 — Install & Test"
+    runs-on: ubuntu-latest
+
+    env:
+      APP_ENV: test
+      DEBUG: "false"
+      API_HOST: "0.0.0.0"
+      API_PORT: "8000"
+      # ── Database (mocked — no SQL Server running in CI) ──
+      DB_USER: test_user
+      DB_PASSWORD: test_pass
+      DB_SERVER: localhost
+      DB_PORT: "1433"
+      DB_NAME: test_db
+      DB_DRIVER: "ODBC Driver 18 for SQL Server"
+      PRIMARY_DB_URL: "mssql+pyodbc://test_user:test_pass@localhost:1433/test_db?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+      REPLICA_DB_URL: "mssql+pyodbc://test_user:test_pass@localhost:1433/test_db?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+      DB_POOL_SIZE: "2"
+      DB_MAX_OVERFLOW: "2"
+      DB_POOL_TIMEOUT: "5"
+      DB_POOL_RECYCLE: "300"
+      # ── Redis (real service spun up below) ──
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      # ── Auth ──
+      JWT_SECRET: ci-test-secret-key-not-for-production
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRATION_MINUTES: "60"
+      # ── Optional services (stubbed) ──
+      KAFKA_BOOTSTRAP_SERVERS: "localhost:9092"
+      TRITON_BASE_URL: "http://localhost:8001"
+      MINIO_ENDPOINT: "localhost:9000"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: logistics-ai-data
+      MINIO_USE_SSL: "false"
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install test tooling
+        run: pip install pytest flake8
+
+      - name: Lint — flake8
+        run: flake8 backend/ --max-line-length=120 --exclude=__pycache__,venv,.venv
+
+      - name: Run tests — pytest
+        run: pytest -v --tb=short
+
+  # ─────────────────────────────────────────────────────────────
+  # STAGE 2 — BUILD DOCKER IMAGE
+  # ─────────────────────────────────────────────────────────────
+  build:
+    name: "Stage 2 — Docker Build"
+    runs-on: ubuntu-latest
+    needs: test
+
+    outputs:
+      short_sha: ${{ steps.vars.outputs.short_sha }}
+      image_tag:  ${{ steps.vars.outputs.image_tag }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compute image tag
+        id: vars
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "image_tag=${{ env.IMAGE_NAME }}:${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU (multi-arch)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Log in early so the pushed cache layers are accessible to the scan job
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false          # don't push yet — scan first
+          load: true           # load into local Docker daemon for trivy scan
+          tags: |
+            ${{ steps.vars.outputs.image_tag }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ steps.vars.outputs.short_sha }}
+
+      - name: Export image as tar for downstream jobs
+        run: |
+          docker save "${{ steps.vars.outputs.image_tag }}" \
+            -o /tmp/logistics-image.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-${{ steps.vars.outputs.short_sha }}
+          path: /tmp/logistics-image.tar
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────
+  # STAGE 3 — TRIVY SECURITY SCAN
+  # ─────────────────────────────────────────────────────────────
+  scan:
+    name: "Stage 3 — Trivy Security Scan"
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      security-events: write   # required to upload SARIF to Security tab
+
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image-${{ needs.build.outputs.short_sha }}
+          path: /tmp
+
+      - name: Load image from tar
+        run: docker load -i /tmp/logistics-image.tar
+
+      - name: Run Trivy — SARIF output (uploads to GitHub Security tab)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build.outputs.image_tag }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "0"       # report only — don't block the push stage
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Run Trivy — fail on CRITICAL CVEs
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build.outputs.image_tag }}
+          format: table
+          severity: CRITICAL
+          exit-code: "1"      # hard-fail only on CRITICAL (CI blocks push)
+          ignore-unfixed: true
+
+  # ─────────────────────────────────────────────────────────────
+  # STAGE 4 — PUSH IMAGE TO DOCKERHUB
+  # Only runs on pushes to main (not on PRs)
+  # ─────────────────────────────────────────────────────────────
+  push:
+    name: "Stage 4 — Push to DockerHub"
+    runs-on: ubuntu-latest
+    needs: [build, scan]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image-${{ needs.build.outputs.short_sha }}
+          path: /tmp
+
+      - name: Load image from tar
+        run: docker load -i /tmp/logistics-image.tar
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Tag image as latest
+        run: |
+          docker tag "${{ needs.build.outputs.image_tag }}" \
+            "${{ env.IMAGE_NAME }}:latest"
+
+      - name: Push SHA-tagged image
+        run: docker push "${{ needs.build.outputs.image_tag }}"
+
+      - name: Push latest tag
+        run: docker push "${{ env.IMAGE_NAME }}:latest"
+
+      - name: Image digest summary
+        run: |
+          echo "### Docker Image Published" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| SHA tag | \`${{ needs.build.outputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Latest  | \`${{ env.IMAGE_NAME }}:latest\` |" >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────────────────────
+  # STAGE 5 — DEPLOY TO KUBERNETES
+  # Requires KUBECONFIG secret. Skips gracefully if absent.
+  # Only runs on pushes to main (not on PRs)
+  # ─────────────────────────────────────────────────────────────
+  deploy:
+    name: "Stage 5 — Deploy to Kubernetes"
+    runs-on: ubuntu-latest
+    needs: push
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    environment:
+      name: ${{ github.event.inputs.environment || 'production' }}
+      url: https://api.logistics-ai.example.com
+
+    steps:
+      - name: Checkout repository (k8s manifests)
+        uses: actions/checkout@v4
+
+      - name: Verify KUBECONFIG secret is present
+        id: check_kubeconfig
+        run: |
+          if [ -z "${{ secrets.KUBECONFIG }}" ]; then
+            echo "present=false" >> $GITHUB_OUTPUT
+            echo "⚠️  KUBECONFIG secret not set — skipping Kubernetes deploy." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "present=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up kubectl
+        if: steps.check_kubeconfig.outputs.present == 'true'
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.28.0"
+
+      - name: Configure kubectl context
+        if: steps.check_kubeconfig.outputs.present == 'true'
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Verify cluster connectivity
+        if: steps.check_kubeconfig.outputs.present == 'true'
+        run: kubectl cluster-info
+
+      - name: Apply all k8s manifests
+        if: steps.check_kubeconfig.outputs.present == 'true'
+        run: kubectl apply -f k8s/ -n ${{ env.K8S_NAMESPACE }}
+
+      - name: Rolling update — API image
+        if: steps.check_kubeconfig.outputs.present == 'true'
+        run: |
+          kubectl set image deployment/logistics-api \
+            api=${{ needs.build.outputs.image_tag }} \
+            -n ${{ env.K8S_NAMESPACE }}
+
+      - name: Rolling update — Celery image
+        if: steps.check_kubeconfig.outputs.present == 'true'
+        run: |
+          kubectl set image deployment/logistics-celery \
+            celery-worker=${{ needs.build.outputs.image_tag }} \
+            -n ${{ env.K8S_NAMESPACE }}
+
+      - name: Wait for API rollout
+        if: steps.check_kubeconfig.outputs.present == 'true'
+        run: |
+          kubectl rollout status deployment/logistics-api \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=300s
+
+      - name: Wait for Celery rollout
+        if: steps.check_kubeconfig.outputs.present == 'true'
+        run: |
+          kubectl rollout status deployment/logistics-celery \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=300s
+
+      - name: Smoke test — liveness probe
+        if: steps.check_kubeconfig.outputs.present == 'true'
+        run: |
+          kubectl exec deployment/logistics-api \
+            -n ${{ env.K8S_NAMESPACE }} \
+            -- curl -sf http://localhost:8000/health/live
+
+      - name: Rollback on failure
+        if: steps.check_kubeconfig.outputs.present == 'true' && failure()
+        run: |
+          echo "Deployment failed — rolling back..." >&2
+          kubectl rollout undo deployment/logistics-api -n ${{ env.K8S_NAMESPACE }}
+          kubectl rollout undo deployment/logistics-celery -n ${{ env.K8S_NAMESPACE }}
+          kubectl rollout status deployment/logistics-api \
+            -n ${{ env.K8S_NAMESPACE }} --timeout=180s
+          echo "Rollback complete."
+
+      - name: Deployment summary
+        if: steps.check_kubeconfig.outputs.present == 'true' && success()
+        run: |
+          echo "### Kubernetes Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | \`${{ needs.build.outputs.image_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Namespace | \`${{ env.K8S_NAMESPACE }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | \`${{ github.event.inputs.environment || 'production' }}\` |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify Slack on success
+        if: steps.check_kubeconfig.outputs.present == 'true' && success() && env.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          payload: |
+            {
+              "text": "✅ Deployed `${{ github.repository }}` @ `${{ needs.build.outputs.short_sha }}` to *${{ github.event.inputs.environment || 'production' }}*"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        continue-on-error: true  # never fail the deploy over a Slack message
