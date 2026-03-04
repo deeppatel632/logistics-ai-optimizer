@@ -8,12 +8,13 @@ from typing import Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-from slowapi import Limiter
+from backend.core.rate_limiter import limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
-
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
 from backend.api import audit_routes, auth_routes, health_routes, warehouse_routes
-from backend.core.limiter import limiter
 from backend.core.logging_config import configure_logging
 from backend.core.metrics import ERROR_COUNT, REQUEST_COUNT, REQUEST_LATENCY
 from backend.core.tenant_middleware import TenantMiddleware
@@ -45,7 +46,8 @@ app.add_exception_handler(
         content={"detail": "Rate limit exceeded"},
     ),
 )
-
+app.add_middleware(SlowAPIMiddleware)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(TenantMiddleware)
 
 FastAPIInstrumentor.instrument_app(app)
