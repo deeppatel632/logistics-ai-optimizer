@@ -289,6 +289,24 @@ def api_analytics_kpis():
         return jsonify({"error": "backend unreachable"}), 503
 
 
+@app.route("/api/inventory")
+@login_required
+def api_inventory():
+    """
+    Return per-warehouse inventory utilisation by proxying to
+    GET /analytics/kpis → warehouse_load list.
+
+    Each item: {warehouse_id, name, capacity, stock_quantity, utilisation_pct}
+    """
+    try:
+        data = _api_get("/analytics/kpis")
+        return jsonify(data.get("warehouse_load", []))
+    except httpx.HTTPStatusError as exc:
+        return jsonify({"error": str(exc)}), exc.response.status_code
+    except httpx.RequestError as exc:
+        return jsonify({"error": "backend unreachable", "detail": str(exc)}), 503
+
+
 @app.route("/api/vehicles/location", methods=["POST"])
 @login_required
 def api_vehicle_location():

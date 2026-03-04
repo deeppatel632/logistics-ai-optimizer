@@ -8,6 +8,9 @@
   <!-- Tailwind CSS CDN (no build step needed) -->
   <script src="https://cdn.tailwindcss.com"></script>
 
+  <!-- Shared stylesheet -->
+  <link rel="stylesheet" href="/static/style.css" />
+
   <!-- Leaflet CSS (loaded on pages that use maps) -->
   {% block head_extra %}{% endblock %}
 
@@ -87,6 +90,9 @@
     tick();
     setInterval(tick, 1000);
   </script>
+
+  <!-- Shared JS utilities -->
+  <script src="/static/js/utils.js"></script>
 
   {% block scripts %}{% endblock %}
 </body>

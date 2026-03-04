@@ -81,53 +81,53 @@
 
 {% block scripts %}
 <script>
-async function loadInventory() {
-  const whId = document.getElementById('wh-select').value;
-  const path = whId ? `/api/warehouses` : `/api/warehouses`;
-  try {
-    // Inventory endpoint — adapt if your backend exposes /inventory
-    const r = await fetch('/api/warehouses');
-    const warehouses = await r.json();
+// Use LogisticsUtils from utils.js
+const { apiFetch, utilisationBar, formatNumber } = LogisticsUtils;
 
-    // Until a dedicated /inventory endpoint exists, show warehouses as rows
-    const rows = Array.isArray(warehouses) ? warehouses : [];
+async function loadInventory() {
+  try {
+    // /api/inventory proxies to FastAPI /analytics/kpis → warehouse_load
+    const items = await apiFetch('/api/inventory');
+    if (!Array.isArray(items)) return;
+
+    const whId = document.getElementById('wh-select').value;
+    const rows = whId
+      ? items.filter(r => String(r.warehouse_id) === String(whId))
+      : items;
+
+    // ── Inventory table ───────────────────────────────────────────
     const tbody = document.getElementById('inventory-table');
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-gray-500">No data.</td></tr>';
-      return;
+      tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-gray-500">No inventory data.</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(r => `
+        <tr>
+          <td class="px-4 py-3 text-gray-500 font-mono">#${r.warehouse_id}</td>
+          <td class="px-4 py-3">${r.name}</td>
+          <td class="px-4 py-3 text-gray-400">All products</td>
+          <td class="px-4 py-3">${formatNumber(r.stock_quantity)}
+            <span class="text-gray-500 text-xs"> / ${formatNumber(r.capacity)}</span></td>
+          <td class="px-4 py-3 w-48">${utilisationBar(r.utilisation_pct)}</td>
+        </tr>
+      `).join('');
     }
 
-    tbody.innerHTML = rows.map((w, i) => {
-      const util = Math.floor(Math.random() * 80) + 10; // simulated
-      const barColor = util > 80 ? '#ef4444' : util > 60 ? '#f59e0b' : '#22c55e';
-      return `
-        <tr>
-          <td class="px-4 py-3 text-gray-500 font-mono">#${w.id}</td>
-          <td class="px-4 py-3">${w.name}</td>
-          <td class="px-4 py-3 text-gray-500">—</td>
-          <td class="px-4 py-3">—</td>
-          <td class="px-4 py-3 w-40">
-            <div class="flex items-center gap-2">
-              <div class="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                <div class="h-full rounded-full" style="width:${util}%;background:${barColor}"></div>
-              </div>
-              <span class="text-xs text-gray-400">${util}%</span>
-            </div>
-          </td>
-        </tr>
-      `;
-    }).join('');
-
-    // Update card bars
-    rows.forEach(w => {
-      const util = Math.floor(Math.random() * 80) + 10;
-      const el = document.getElementById(`util-bar-${w.id}`);
-      const label = document.getElementById(`util-${w.id}`);
-      if (el) el.style.width = `${util}%`;
-      if (label) label.textContent = `${util}%`;
+    // ── Update warehouse card bars ─────────────────────────────────
+    items.forEach(r => {
+      const barEl   = document.getElementById(`util-bar-${r.warehouse_id}`);
+      const labelEl = document.getElementById(`util-${r.warehouse_id}`);
+      const pct = r.utilisation_pct ?? 0;
+      const color = pct > 85 ? '#ef4444' : pct > 60 ? '#f59e0b' : '#22c55e';
+      if (barEl) {
+        barEl.style.width  = `${pct}%`;
+        barEl.style.background = color;
+      }
+      if (labelEl) labelEl.textContent = `${pct.toFixed(1)}%`;
     });
+
   } catch(e) {
     console.error('inventory fetch failed', e);
+    LogisticsUtils.showToast('Failed to load inventory data', 'error');
   }
 }
 
