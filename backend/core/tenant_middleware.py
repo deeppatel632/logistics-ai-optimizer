@@ -3,6 +3,7 @@ from fastapi import Request
 from backend.core.security import decode_token
 from backend.core.tenant_context import set_current_tenant
 
+
 class TenantMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):

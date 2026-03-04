@@ -18,6 +18,6 @@ def list_audit_logs(
     limit: int = 50,
     offset: int = 0,
     db: Session = Depends(get_db),
-    user = Depends(require_role("admin")),
+    user=Depends(require_role("admin")),
 ):
     return get_audit_logs(db, entity_type, user_id, limit, offset)

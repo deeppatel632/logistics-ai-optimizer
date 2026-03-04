@@ -1,6 +1,6 @@
-from sqlalchemy.orm import Session
 from sqlalchemy import select
-from sqlalchemy.exc import NoResultFound
+from sqlalchemy.orm import Session
+
 from database.models import Vehicle
 from fastapi import HTTPException
 

@@ -1,10 +1,11 @@
-from sqlalchemy.orm import Session
-from sqlalchemy import select
-from database.models import Inventory
-from fastapi import HTTPException
-from backend.core.redis_client import redis_client
 import json
-from sqlalchemy.exc import NoResultFound
+
+from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from backend.core.redis_client import redis_client
+from database.models import Inventory
 
 
 def get_inventory(db: Session, warehouse_id: int, product_id: int):
@@ -37,6 +38,7 @@ def get_inventory(db: Session, warehouse_id: int, product_id: int):
 
     return data
 
+
 def deduct_stock(db: Session, warehouse_id: int, product_id: int, quantity: int):
     inventory = (
         db.query(Inventory)
@@ -57,6 +59,8 @@ def deduct_stock(db: Session, warehouse_id: int, product_id: int, quantity: int)
     inventory.quantity -= quantity
     redis_client.delete(f"inventory:{warehouse_id}:{product_id}")
     db.flush()
+
+
 def create_inventory(db: Session, warehouse_id: int, product_id: int, quantity: int):
     inventory = Inventory(
         warehouse_id=warehouse_id,
@@ -66,6 +70,7 @@ def create_inventory(db: Session, warehouse_id: int, product_id: int, quantity: 
     db.add(inventory)
     db.flush()
     return inventory
+
 
 def reserve_inventory(
     db: Session,

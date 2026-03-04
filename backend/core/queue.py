@@ -1,5 +1,6 @@
 from redis import Redis
 from rq import Queue
+
 from backend.core.config import settings
 
 

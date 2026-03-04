@@ -1,5 +1,4 @@
-from prometheus_client import Counter, Histogram
-from prometheus_client import Counter, Histogram, Gauge
+from prometheus_client import Counter, Gauge, Histogram
 
 # Application errors
 ERROR_COUNT = Counter(

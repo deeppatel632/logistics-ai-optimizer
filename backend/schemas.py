@@ -9,11 +9,13 @@ from pydantic import BaseModel, Field
 class ShipmentStatusUpdate(BaseModel):
     new_status: str
 
+
 class WarehouseCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     latitude: float
     longitude: float
     capacity: int = Field(..., gt=0)
+
 
 class WarehouseResponse(BaseModel):
     id: int
@@ -29,6 +31,7 @@ class ShipmentCreate(BaseModel):
     warehouse_id: int
     product_id: int
     quantity: int = Field(..., gt=0)
+
 
 class ShipmentResponse(BaseModel):
     id: int

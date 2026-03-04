@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     db_port: int
     db_name: str
     db_driver: str
+    primary_db_url: str
+    replica_db_url: str
 
     db_pool_size: int
     db_max_overflow: int

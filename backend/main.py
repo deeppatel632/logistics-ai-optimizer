@@ -10,17 +10,14 @@ from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from backend.core.rate_limiter import limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
-from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 from backend.api import audit_routes, auth_routes, health_routes, warehouse_routes
 from backend.core.logging_config import configure_logging
-from backend.core.metrics import ERROR_COUNT, REQUEST_COUNT, REQUEST_LATENCY
+from backend.core.metrics import REQUEST_COUNT, REQUEST_LATENCY
 from backend.core.tenant_middleware import TenantMiddleware
 from backend.core.tracing import configure_tracing
 from database.connection import engine, validate_database_connection
-from database.models import Base
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 configure_logging()

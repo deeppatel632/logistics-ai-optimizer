@@ -1,7 +1,8 @@
-from sqlalchemy.orm import Session
-from database.models import Warehouse
-from backend.schemas import WarehouseCreate
 from datetime import datetime
+
+from sqlalchemy.orm import Session
+
+from database.models import Warehouse
 
 
 def create_warehouse(db: Session, tenant_id: int, data):
@@ -15,24 +16,27 @@ def create_warehouse(db: Session, tenant_id: int, data):
     db.refresh(warehouse)
     return warehouse
 
+
 def get_warehouse(db: Session, tenant_id: int, warehouse_id: int):
     return db.query(Warehouse).filter(
         Warehouse.id == warehouse_id,
         Warehouse.tenant_id == tenant_id,
-        Warehouse.is_deleted == False
+        Warehouse.is_deleted.is_(False)
     ).first()
+
 
 def list_warehouses(db: Session, tenant_id: int):
     return db.query(Warehouse).filter(
         Warehouse.tenant_id == tenant_id,
-        Warehouse.is_deleted == False
+        Warehouse.is_deleted.is_(False)
     ).all()
+
 
 def delete_warehouse(db: Session, tenant_id: int, warehouse_id: int):
     warehouse = db.query(Warehouse).filter(
         Warehouse.id == warehouse_id,
         Warehouse.tenant_id == tenant_id,
-        Warehouse.is_deleted == False
+        Warehouse.is_deleted.is_(False)
     ).first()
 
     if not warehouse:

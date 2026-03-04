@@ -26,6 +26,7 @@ def log_action(
 
     db.add(audit)
 
+
 def get_audit_logs(
     db: Session,
     entity_type: Optional[str] = None,

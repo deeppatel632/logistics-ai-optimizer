@@ -1,6 +1,6 @@
 import pybreaker
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse
 
 from database.connection import safe_db_check
 from backend.core.queue import redis_conn
