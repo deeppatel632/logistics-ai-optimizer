@@ -1,164 +1,123 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
-{% block page_title %}Admin Dashboard{% endblock %}
-
+{% block page_title %}Dashboard{% endblock %}
 {% block content %}
 
-<!-- ── Stat cards ─────────────────────────────────────────────────── -->
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="stat-row">
-  <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
-    <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">API Status</p>
-    <p class="text-2xl font-bold text-green-400 capitalize" id="card-api-status">
-      {{ stats.api_status }}
-    </p>
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px;">
+  <div class="stat-card">
+    <div class="stat-icon" style="background:#eef2ff;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    </div>
+    <div class="stat-label">API Status</div>
+    <div class="stat-value" id="card-api-status" style="font-size:18px;color:#22c55e;">{{ stats.api_status }}</div>
   </div>
-  <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
-    <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">Warehouses</p>
-    <p class="text-2xl font-bold text-blue-400" id="card-warehouses">
-      {{ stats.warehouse_count }}
-    </p>
+  <div class="stat-card">
+    <div class="stat-icon" style="background:#dbeafe;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+    </div>
+    <div class="stat-label">Warehouses</div>
+    <div class="stat-value" id="card-warehouses">{{ stats.warehouse_count }}</div>
   </div>
-  <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
-    <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">Total Shipments</p>
-    <p class="text-2xl font-bold text-purple-400" id="card-shipments">—</p>
+  <div class="stat-card">
+    <div class="stat-icon" style="background:#f3e8ff;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+    </div>
+    <div class="stat-label">Total Shipments</div>
+    <div class="stat-value" id="card-shipments">—</div>
   </div>
-  <div class="stat-card bg-gray-900 border border-gray-800 rounded-xl p-5">
-    <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">In Transit</p>
-    <p class="text-2xl font-bold text-yellow-400" id="card-transit">—</p>
+  <div class="stat-card">
+    <div class="stat-icon" style="background:#fef3c7;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </div>
+    <div class="stat-label">In Transit</div>
+    <div class="stat-value" id="card-transit">—</div>
   </div>
 </div>
 
-<!-- ── Second row ─────────────────────────────────────────────────── -->
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-
-  <!-- Shipment status breakdown -->
-  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
-    <h2 class="text-sm font-semibold text-gray-300 mb-4">📦 Shipment Status Breakdown</h2>
-    <div id="status-breakdown" class="space-y-3 text-sm">
-      <p class="text-gray-500">Loading…</p>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        Shipment Breakdown
+      </span>
     </div>
+    <div class="card-body" id="status-breakdown"><p style="color:#94a3b8;font-size:13px;">Loading&hellip;</p></div>
   </div>
-
-  <!-- Service health table -->
-  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
-    <h2 class="text-sm font-semibold text-gray-300 mb-4">🩺 Service Health</h2>
-    <div class="space-y-2 text-sm" id="service-health">
-      <p class="text-gray-500">Checking…</p>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Service Health
+      </span>
     </div>
+    <div class="card-body" id="service-health"><p style="color:#94a3b8;font-size:13px;">Checking&hellip;</p></div>
   </div>
 </div>
 
-<!-- ── Recent activity table ──────────────────────────────────────── -->
-<div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
-  <h2 class="text-sm font-semibold text-gray-300 mb-4">🕓 Recent Shipments</h2>
-  <div class="overflow-x-auto">
-    <table class="w-full text-xs text-left">
-      <thead>
-        <tr class="text-gray-500 border-b border-gray-800">
-          <th class="pb-2 pr-4">ID</th>
-          <th class="pb-2 pr-4">Product</th>
-          <th class="pb-2 pr-4">Warehouse</th>
-          <th class="pb-2 pr-4">Qty</th>
-          <th class="pb-2">Status</th>
-        </tr>
-      </thead>
-      <tbody id="recent-shipments" class="text-gray-300">
-        <tr><td colspan="5" class="py-3 text-gray-500">Loading…</td></tr>
-      </tbody>
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+      Recent Shipments
+    </span>
+    <button onclick="refreshDashboard()" class="btn btn-secondary btn-sm">Refresh</button>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="tbl">
+      <thead><tr><th>ID</th><th>Product</th><th>Warehouse</th><th>Qty</th><th>Status</th></tr></thead>
+      <tbody id="recent-shipments"><tr><td colspan="5" style="color:#94a3b8;">Loading&hellip;</td></tr></tbody>
     </table>
   </div>
 </div>
 
 {% endblock %}
-
 {% block scripts %}
 <script>
-const statusColor = {
-  Pending: 'text-yellow-400',
-  InTransit: 'text-blue-400',
-  Delivered: 'text-green-400',
-  Cancelled: 'text-red-400',
-};
+const badgeClass = { Pending:'badge-pending', InTransit:'badge-transit', Delivered:'badge-delivered', Cancelled:'badge-cancelled' };
 
 async function refreshDashboard() {
   try {
-    const r = await fetch('/api/analytics/summary');
-    const data = await r.json();
-    document.getElementById('card-api-status').textContent = data.api_status || '—';
-    document.getElementById('card-shipments').textContent = data.total_shipments ?? '—';
-    document.getElementById('card-transit').textContent = data.in_transit ?? '—';
-
-    // Breakdown bars
-    const total = data.total_shipments || 1;
-    const sections = [
-      { label: 'Pending', value: data.pending, cls: 'bg-yellow-500' },
-      { label: 'In Transit', value: data.in_transit, cls: 'bg-blue-500' },
-      { label: 'Delivered', value: data.delivered, cls: 'bg-green-500' },
-    ];
+    const r = await fetch('/api/analytics/summary'); const d = await r.json();
+    document.getElementById('card-api-status').textContent = d.api_status || '—';
+    document.getElementById('card-shipments').textContent = d.total_shipments ?? '—';
+    document.getElementById('card-transit').textContent = d.in_transit ?? '—';
+    const total = d.total_shipments || 1;
+    const sections = [{label:'Pending',value:d.pending,color:'#f59e0b'},{label:'In Transit',value:d.in_transit,color:'#3b82f6'},{label:'Delivered',value:d.delivered,color:'#10b981'}];
     document.getElementById('status-breakdown').innerHTML = sections.map(s => `
-      <div>
-        <div class="flex justify-between mb-1">
-          <span class="text-gray-400">${s.label}</span>
-          <span class="text-gray-300 font-medium">${s.value ?? 0}</span>
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;">
+          <span style="color:#475569;font-weight:500;">${s.label}</span><span style="color:#0f172a;font-weight:600;">${s.value??0}</span>
         </div>
-        <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
-          <div class="${s.cls} h-full rounded-full transition-all"
-               style="width:${Math.round(((s.value??0)/total)*100)}%"></div>
-        </div>
-      </div>
-    `).join('');
-  } catch(e) {
-    console.error('summary fetch failed', e);
-  }
+        <div class="progress-track"><div class="progress-fill" style="width:${Math.round(((s.value??0)/total)*100)}%;background:${s.color};"></div></div>
+      </div>`).join('');
+  } catch(e) { console.error(e); }
 }
 
 async function refreshHealth() {
   try {
-    const r = await fetch('/api/analytics/summary');
-    const d = await r.json();
-    const services = [
-      { name: 'FastAPI Backend', status: d.api_status === 'ready' ? 'online' : 'degraded' },
-      { name: 'Database', status: 'online' },
-      { name: 'Redis Cache', status: 'online' },
-      { name: 'Celery Workers', status: 'online' },
-    ];
+    const r = await fetch('/api/analytics/summary'); const d = await r.json();
+    const services = [{name:'FastAPI backend',up:d.api_status==='ready'},{name:'Redis cache',up:true},{name:'Database',up:d.total_shipments!==undefined}];
     document.getElementById('service-health').innerHTML = services.map(s => `
-      <div class="flex items-center justify-between">
-        <span class="text-gray-400">${s.name}</span>
-        <span class="px-2 py-0.5 rounded text-xs ${s.status === 'online'
-          ? 'bg-green-900 text-green-300'
-          : 'bg-yellow-900 text-yellow-300'}">${s.status}</span>
-      </div>
-    `).join('');
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;">
+        <span style="font-size:13px;color:#475569;">${s.name}</span>
+        <span style="font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;${s.up?'background:#d1fae5;color:#065f46;':'background:#fee2e2;color:#991b1b;'}">
+          ${s.up?'Online':'Degraded'}
+        </span>
+      </div>`).join('');
   } catch(e) {}
 }
 
-async function refreshRecentShipments() {
+async function refreshRecent() {
   try {
-    const r = await fetch('/api/shipments');
-    const data = await r.json();
-    const rows = Array.isArray(data) ? data.slice(0, 8) : [];
-    if (rows.length === 0) {
-      document.getElementById('recent-shipments').innerHTML =
-        '<tr><td colspan="5" class="py-3 text-gray-500">No shipments found.</td></tr>';
-      return;
-    }
-    document.getElementById('recent-shipments').innerHTML = rows.map(s => `
-      <tr class="border-b border-gray-800/50">
-        <td class="py-2 pr-4 text-gray-500">#${s.id}</td>
-        <td class="py-2 pr-4">${s.product_id ?? '—'}</td>
-        <td class="py-2 pr-4">${s.warehouse_id ?? '—'}</td>
-        <td class="py-2 pr-4">${s.quantity}</td>
-        <td class="py-2 ${statusColor[s.status] || 'text-gray-400'}">${s.status}</td>
-      </tr>
-    `).join('');
+    const r = await fetch('/api/shipments'); const rows = await r.json();
+    if (!Array.isArray(rows)||!rows.length) { document.getElementById('recent-shipments').innerHTML='<tr><td colspan="5" style="color:#94a3b8;">No shipments yet.</td></tr>'; return; }
+    document.getElementById('recent-shipments').innerHTML = rows.slice(0,8).map(s => `
+      <tr><td class="tbl-mono">#${s.id}</td><td>${s.product_id}</td><td>${s.warehouse_id}</td><td>${s.quantity}</td><td><span class="badge ${badgeClass[s.status]||'badge-pending'}">${s.status}</span></td></tr>`).join('');
   } catch(e) {}
 }
 
-// Initial load + 15-second refresh
-refreshDashboard();
-refreshHealth();
-refreshRecentShipments();
-setInterval(() => { refreshDashboard(); refreshHealth(); refreshRecentShipments(); }, 15_000);
+refreshDashboard(); refreshHealth(); refreshRecent();
+setInterval(()=>{refreshDashboard();refreshHealth();refreshRecent();},15000);
 </script>
 {% endblock %}

@@ -3,97 +3,263 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{% block title %}Logistics AI{% endblock %} — Logistics AI Optimizer</title>
-
-  <!-- Tailwind CSS CDN (no build step needed) -->
+  <title>{% block title %}Logistics{% endblock %} — FleetOps</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- Shared stylesheet -->
-  <link rel="stylesheet" href="/static/style.css" />
-
-  <!-- Leaflet CSS (loaded on pages that use maps) -->
   {% block head_extra %}{% endblock %}
-
   <style>
-    body { font-family: 'Inter', sans-serif; }
-    .sidebar-link.active {
-      background: rgba(255,255,255,0.15);
-      border-left: 3px solid #60a5fa;
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f1f5f9;
+      color: #0f172a;
+      margin: 0;
+      display: flex;
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
     }
-    .stat-card { transition: transform 0.15s ease; }
-    .stat-card:hover { transform: translateY(-2px); }
+    /* Sidebar */
+    .sidebar {
+      width: 232px;
+      background: #1e293b;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }
+    .sidebar-brand {
+      padding: 18px 16px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand-icon {
+      width: 30px; height: 30px;
+      background: #6366f1;
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .brand-title { color: #f1f5f9; font-weight: 700; font-size: 14.5px; letter-spacing: -0.2px; }
+    .brand-sub { color: #475569; font-size: 10.5px; font-weight: 500; margin-top: 1px; }
+    .nav-section { padding: 18px 10px 6px; }
+    .nav-label {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.09em; color: #475569; padding: 0 8px 6px;
+    }
+    .nav-link {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 10px; border-radius: 7px;
+      color: #94a3b8; text-decoration: none;
+      font-size: 13.5px; font-weight: 500; margin-bottom: 1px;
+      transition: background 0.12s, color 0.12s;
+    }
+    .nav-link svg { width: 15px; height: 15px; stroke: currentColor; flex-shrink: 0; }
+    .nav-link:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
+    .nav-link.active { background: rgba(99,102,241,0.18); color: #a5b4fc; }
+    .nav-link.active svg { color: #818cf8; }
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 14px 14px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .user-info { display: flex; align-items: center; gap: 9px; }
+    .user-avatar {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: #4f46e5; display: flex; align-items: center;
+      justify-content: center; font-size: 11px; font-weight: 700; color: white;
+    }
+    .user-name { color: #94a3b8; font-size: 12.5px; font-weight: 500; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .logout-btn {
+      color: #475569; text-decoration: none; padding: 5px 8px;
+      border-radius: 6px; font-size: 12px; font-weight: 500;
+      transition: background 0.12s, color 0.12s;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .logout-btn:hover { background: rgba(239,68,68,0.12); color: #f87171; }
+    .logout-btn svg { width: 13px; height: 13px; }
+    /* Main */
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .topbar {
+      height: 54px; background: white; border-bottom: 1px solid #e2e8f0;
+      display: flex; align-items: center; padding: 0 24px; gap: 14px;
+      flex-shrink: 0; position: sticky; top: 0; z-index: 10;
+    }
+    .topbar-title { font-size: 15px; font-weight: 600; color: #0f172a; flex: 1; }
+    .clock { font-size: 12px; color: #94a3b8; font-variant-numeric: tabular-nums; }
+    .live-badge {
+      font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 20px;
+      background: #dcfce7; color: #166534; border: 1px solid #bbf7d0;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .live-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .page { flex: 1; padding: 24px; overflow: auto; }
+    /* Cards */
+    .card {
+      background: white; border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .card-header {
+      padding: 14px 20px; border-bottom: 1px solid #f1f5f9;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .card-title {
+      font-size: 13.5px; font-weight: 600; color: #1e293b;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .card-title svg { width: 15px; height: 15px; color: #6366f1; }
+    .card-body { padding: 20px; }
+    /* Stat cards */
+    .stat-card {
+      background: white; border-radius: 12px; border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      padding: 18px 20px;
+      transition: box-shadow 0.15s, transform 0.15s;
+    }
+    .stat-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.09); transform: translateY(-1px); }
+    .stat-icon {
+      width: 34px; height: 34px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 12px;
+    }
+    .stat-icon svg { width: 17px; height: 17px; }
+    .stat-label { font-size: 11.5px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+    .stat-value { font-size: 24px; font-weight: 700; color: #0f172a; letter-spacing: -0.5px; }
+    /* Badges */
+    .badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 20px; font-size: 11.5px; font-weight: 600; }
+    .badge-pending   { background: #fef3c7; color: #92400e; }
+    .badge-transit   { background: #dbeafe; color: #1e40af; }
+    .badge-delivered { background: #d1fae5; color: #065f46; }
+    .badge-cancelled { background: #fee2e2; color: #991b1b; }
+    .badge-available { background: #d1fae5; color: #065f46; }
+    .badge-created   { background: #f3e8ff; color: #6b21a8; }
+    /* Table */
+    .tbl { width: 100%; border-collapse: collapse; }
+    .tbl th {
+      font-size: 11px; font-weight: 600; color: #64748b;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      padding: 10px 16px; text-align: left;
+      border-bottom: 1px solid #e2e8f0; background: #f8fafc;
+      white-space: nowrap;
+    }
+    .tbl td { padding: 11px 16px; border-bottom: 1px solid #f1f5f9; font-size: 13.5px; color: #1e293b; }
+    .tbl tbody tr:last-child td { border-bottom: none; }
+    .tbl tbody tr:hover td { background: #fafbfc; }
+    .tbl-mono { font-family: 'SFMono-Regular', 'Consolas', monospace; font-size: 12px; color: #64748b; }
+    /* Forms */
+    .form-input, .form-select {
+      width: 100%; background: white; border: 1px solid #e2e8f0;
+      border-radius: 8px; padding: 8px 12px; font-size: 13.5px;
+      color: #1e293b; transition: border-color 0.12s, box-shadow 0.12s;
+      outline: none; font-family: inherit;
+    }
+    .form-input::placeholder { color: #94a3b8; }
+    .form-input:focus, .form-select:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+    }
+    .form-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+    .form-label { display: block; font-size: 11.5px; font-weight: 600; color: #64748b; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.06em; }
+    /* Buttons */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: 8px; font-size: 13px;
+      font-weight: 600; cursor: pointer; border: none;
+      transition: all 0.15s; font-family: inherit; text-decoration: none;
+    }
+    .btn svg { width: 14px; height: 14px; }
+    .btn-primary { background: #6366f1; color: white; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-secondary { background: white; color: #475569; border: 1px solid #e2e8f0; }
+    .btn-secondary:hover { background: #f8fafc; border-color: #cbd5e1; }
+    .btn-sm { padding: 5px 12px; font-size: 12px; }
+    /* Progress */
+    .progress-track { height: 6px; background: #e2e8f0; border-radius: 10px; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 10px; transition: width 0.4s ease; }
+    /* Alert */
+    .alert { padding: 11px 14px; border-radius: 8px; font-size: 13px; }
+    .alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
   </style>
 </head>
-<body class="bg-gray-950 text-gray-100 min-h-screen flex">
+<body>
 
-  <!-- ─── Sidebar ───────────────────────────────────────────────────── -->
-  <aside class="w-56 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0 min-h-screen">
-    <div class="px-5 py-6 border-b border-gray-800">
-      <span class="text-blue-400 font-bold text-lg tracking-tight">⚡ LogisticsAI</span>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+      </div>
+      <div>
+        <div class="brand-title">FleetOps</div>
+        <div class="brand-sub">Logistics Platform</div>
+      </div>
     </div>
 
-    <nav class="flex-1 px-2 py-4 space-y-1 text-sm">
-      <a href="/dashboard"
-         class="sidebar-link flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-800 transition
-                {% if request.path == '/dashboard' %}active{% endif %}">
-        <span>🏠</span> Dashboard
+    <nav class="nav-section">
+      <div class="nav-label">Main</div>
+      <a href="/dashboard" class="nav-link {% if request.path == '/dashboard' %}active{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Dashboard
       </a>
-      <a href="/vehicles"
-         class="sidebar-link flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-800 transition
-                {% if request.path == '/vehicles' %}active{% endif %}">
-        <span>🚛</span> Vehicles
+      <a href="/vehicles" class="nav-link {% if request.path == '/vehicles' %}active{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        Vehicles
       </a>
-      <a href="/shipments"
-         class="sidebar-link flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-800 transition
-                {% if request.path == '/shipments' %}active{% endif %}">
-        <span>📦</span> Shipments
+      <a href="/shipments" class="nav-link {% if request.path == '/shipments' %}active{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        Shipments
       </a>
-      <a href="/inventory"
-         class="sidebar-link flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-800 transition
-                {% if request.path == '/inventory' %}active{% endif %}">
-        <span>🏭</span> Inventory
+      <a href="/inventory" class="nav-link {% if request.path == '/inventory' %}active{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        Inventory
       </a>
-      <a href="/analytics"
-         class="sidebar-link flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-800 transition
-                {% if request.path == '/analytics' %}active{% endif %}">
-        <span>📊</span> Analytics
+      <div class="nav-label" style="margin-top:10px;">Reporting</div>
+      <a href="/analytics" class="nav-link {% if request.path == '/analytics' %}active{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        Analytics
       </a>
     </nav>
 
-    <!-- User info + logout -->
-    <div class="px-4 py-4 border-t border-gray-800 text-xs text-gray-400">
-      <div class="mb-2 truncate">👤 {{ username | default(session.get('username', '—')) }}</div>
-      <a href="/logout" class="text-red-400 hover:text-red-300 transition">⏏ Logout</a>
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar">{{ (username | default(session.get('username','?')))[0] | upper }}</div>
+        <span class="user-name">{{ username | default(session.get('username','—')) }}</span>
+      </div>
+      <a href="/logout" class="logout-btn" title="Log out">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </a>
     </div>
   </aside>
 
-  <!-- ─── Main content ─────────────────────────────────────────────── -->
-  <main class="flex-1 flex flex-col min-h-screen">
-    <!-- Top bar -->
-    <header class="h-14 bg-gray-900 border-b border-gray-800 flex items-center px-6 gap-4 shrink-0">
-      <h1 class="text-sm font-semibold text-gray-200 flex-1">{% block page_title %}{% endblock %}</h1>
-      <span id="clock" class="text-xs text-gray-500"></span>
-      <span class="text-xs px-2 py-1 rounded bg-green-900 text-green-300">Live</span>
+  <!-- Main -->
+  <div class="main">
+    <header class="topbar">
+      <span class="topbar-title">{% block page_title %}{% endblock %}</span>
+      <span class="clock" id="clock"></span>
+      <span class="live-badge"><span class="live-dot"></span> Live</span>
     </header>
 
-    <!-- Page body -->
-    <div class="flex-1 p-6 overflow-auto">
+    <div class="page">
       {% block content %}{% endblock %}
     </div>
-  </main>
+  </div>
 
-  <!-- Clock script -->
   <script>
-    function tick() {
-      document.getElementById('clock').textContent = new Date().toLocaleTimeString();
-    }
-    tick();
-    setInterval(tick, 1000);
+    (function tick() {
+      document.getElementById('clock').textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      setTimeout(tick, 1000);
+    })();
   </script>
-
-  <!-- Shared JS utilities -->
   <script src="/static/js/utils.js"></script>
-
   {% block scripts %}{% endblock %}
 </body>
 </html>

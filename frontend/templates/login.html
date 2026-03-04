@@ -1,70 +1,141 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Login — Logistics AI Optimizer</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in — FleetOps</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f1f5f9;
+      min-height: 100vh;
+      display: flex;
+    }
+    .left-panel {
+      width: 42%;
+      background: #1e293b;
+      display: flex;
+      flex-direction: column;
+      padding: 48px;
+      position: relative;
+      overflow: hidden;
+    }
+    .left-panel::before {
+      content: '';
+      position: absolute;
+      top: -80px; right: -80px;
+      width: 300px; height: 300px;
+      background: rgba(99,102,241,0.15);
+      border-radius: 50%;
+    }
+    .left-panel::after {
+      content: '';
+      position: absolute;
+      bottom: -60px; left: -60px;
+      width: 240px; height: 240px;
+      background: rgba(16,185,129,0.08);
+      border-radius: 50%;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: auto; position: relative; z-index: 1; }
+    .brand-mark {
+      width: 36px; height: 36px; background: #6366f1; border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .brand-name { color: white; font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
+    .left-content { position: relative; z-index: 1; }
+    .left-title { color: white; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.25; margin-bottom: 14px; }
+    .left-sub { color: #64748b; font-size: 14px; line-height: 1.6; margin-bottom: 36px; }
+    .feature-list { list-style: none; }
+    .feature-list li {
+      display: flex; align-items: center; gap: 10px;
+      color: #94a3b8; font-size: 13px; margin-bottom: 12px;
+    }
+    .feature-dot { width: 6px; height: 6px; border-radius: 50%; background: #6366f1; flex-shrink: 0; }
+    .right-panel {
+      flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px 32px;
+    }
+    .login-box { width: 100%; max-width: 380px; }
+    .login-title { font-size: 22px; font-weight: 700; color: #0f172a; letter-spacing: -0.3px; margin-bottom: 6px; }
+    .login-sub { font-size: 13.5px; color: #64748b; margin-bottom: 32px; }
+    .form-group { margin-bottom: 18px; }
+    .form-label { display: block; font-size: 12px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
+    .form-input {
+      width: 100%; background: white; border: 1.5px solid #e2e8f0;
+      border-radius: 9px; padding: 10px 14px; font-size: 14px;
+      color: #0f172a; font-family: inherit; outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .form-input::placeholder { color: #94a3b8; }
+    .form-input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.12); }
+    .btn-login {
+      width: 100%; background: #6366f1; color: white;
+      border: none; border-radius: 9px; padding: 11px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      font-family: inherit; transition: background 0.15s, transform 0.1s;
+      margin-top: 6px;
+    }
+    .btn-login:hover { background: #4f46e5; }
+    .btn-login:active { transform: scale(0.99); }
+    .error-box {
+      background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
+      padding: 11px 14px; color: #991b1b; font-size: 13px; margin-bottom: 20px;
+      display: flex; align-items: flex-start; gap: 8px;
+    }
+    .footer-note { text-align: center; margin-top: 28px; font-size: 12px; color: #94a3b8; }
+    @media (max-width: 640px) { .left-panel { display: none; } }
+  </style>
 </head>
-<body class="bg-gray-950 text-gray-100 min-h-screen flex items-center justify-center">
-  <div class="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-xl shadow-2xl p-8">
-
-    <!-- Logo / branding -->
-    <div class="text-center mb-8">
-      <div class="text-4xl mb-3">⚡</div>
-      <h1 class="text-xl font-bold tracking-tight text-white">Logistics AI Optimizer</h1>
-      <p class="text-gray-400 text-sm mt-1">Sign in to your workspace</p>
-    </div>
-
-    <!-- Error banner -->
-    {% if error %}
-    <div class="bg-red-900/40 border border-red-700 text-red-300 text-sm px-4 py-3 rounded-lg mb-6">
-      ⚠️ {{ error }}
-    </div>
-    {% endif %}
-
-    <!-- Login form -->
-    <form method="POST" action="/login" class="space-y-5">
-      <div>
-        <label for="username" class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">
-          Username
-        </label>
-        <input
-          id="username" name="username" type="text" required autocomplete="username"
-          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5
-                 text-sm text-gray-100 placeholder-gray-500
-                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                 transition"
-          placeholder="admin"
-        />
+<body>
+  <div class="left-panel">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>
+        </svg>
       </div>
+      <span class="brand-name">FleetOps</span>
+    </div>
+    <div class="left-content">
+      <h2 class="left-title">Logistics operations,<br>handled.</h2>
+      <p class="left-sub">Real-time tracking, route optimization, and inventory management for modern supply chains.</p>
+      <ul class="feature-list">
+        <li><span class="feature-dot"></span>Live vehicle telemetry and GPS tracking</li>
+        <li><span class="feature-dot"></span>AI-powered route optimization engine</li>
+        <li><span class="feature-dot"></span>Multi-warehouse inventory management</li>
+        <li><span class="feature-dot"></span>Shipment lifecycle monitoring</li>
+      </ul>
+    </div>
+  </div>
 
-      <div>
-        <label for="password" class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">
-          Password
-        </label>
-        <input
-          id="password" name="password" type="password" required autocomplete="current-password"
-          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5
-                 text-sm text-gray-100 placeholder-gray-500
-                 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                 transition"
-          placeholder="••••••••"
-        />
+  <div class="right-panel">
+    <div class="login-box">
+      <h1 class="login-title">Welcome back</h1>
+      <p class="login-sub">Sign in to your FleetOps workspace.</p>
+
+      {% if error %}
+      <div class="error-box">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        {{ error }}
       </div>
+      {% endif %}
 
-      <button
-        type="submit"
-        class="w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700
-               text-white font-semibold py-2.5 rounded-lg text-sm transition"
-      >
-        Sign In →
-      </button>
-    </form>
-
-    <p class="text-center text-xs text-gray-600 mt-8">
-      Multi-tenant · JWT secured · v1.0
-    </p>
+      <form method="POST" action="/login">
+        <div class="form-group">
+          <label class="form-label" for="username">Username</label>
+          <input class="form-input" id="username" name="username" type="text" placeholder="e.g. admin" required autocomplete="username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="password">Password</label>
+          <input class="form-input" id="password" name="password" type="password" placeholder="Enter your password" required autocomplete="current-password" />
+        </div>
+        <button type="submit" class="btn-login">Sign in</button>
+      </form>
+      <p class="footer-note">Multi-tenant &middot; JWT secured &middot; v1.0</p>
+    </div>
   </div>
 </body>
 </html>

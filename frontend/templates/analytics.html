@@ -1,120 +1,82 @@
 {% extends "base.html" %}
 {% block title %}Analytics{% endblock %}
-{% block page_title %}📊 Analytics Dashboard{% endblock %}
+{% block page_title %}Analytics{% endblock %}
 
 {% block head_extra %}
-<!-- Chart.js v4 -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<style>
-  .chart-wrap canvas      { max-height: 280px; }
-  .chart-wrap-tall canvas { max-height: 320px; }
-</style>
+<style>canvas { max-height: 280px; }</style>
 {% endblock %}
 
 {% block content %}
 
-{# ─── KPI stat cards (server-side rendered — instant, no flash) ─── #}
-<div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
-
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px;">
   {% set cards = [
-    ("📦", "Total Shipments",   stats.total_shipments,     "blue"),
-    ("🔄", "In Transit",        stats.active_shipments,    "yellow"),
-    ("✅", "Delivered",         stats.delivered_shipments, "green"),
-    ("🚫", "Cancelled",         stats.cancelled_shipments, "red"),
-    ("📋", "Created",           stats.created_shipments,   "purple"),
-    ("🚛", "Total Vehicles",    stats.total_vehicles,      "indigo"),
-    ("🟢", "Active Vehicles",   stats.active_vehicles,     "teal"),
-    ("🏭", "Warehouses",        stats.total_warehouses,    "orange"),
+    ("total_shipments",    "Total Shipments", "#6366f1", "#eef2ff"),
+    ("delivered_shipments","Delivered",       "#10b981", "#d1fae5"),
+    ("active_shipments",   "In Transit",      "#3b82f6", "#dbeafe"),
+    ("cancelled_shipments","Cancelled",       "#ef4444", "#fee2e2"),
+    ("created_shipments",  "Created",         "#8b5cf6", "#f3e8ff"),
+    ("total_vehicles",     "Total Vehicles",  "#0ea5e9", "#e0f2fe"),
+    ("active_vehicles",    "Active Vehicles", "#22c55e", "#dcfce7"),
+    ("total_warehouses",   "Warehouses",      "#f59e0b", "#fef3c7"),
   ] %}
-
-  {% for icon, label, value, color in cards %}
-  <div class="stat-card col-span-1 bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-1 min-w-0">
-    <div class="text-lg leading-none">{{ icon }}</div>
-    <div class="text-2xl font-bold text-white truncate">
-      {{ value if value is not none else "—" }}
+  {% for key, label, color, bg in cards %}
+  <div class="stat-card">
+    <div class="stat-icon" style="background:{{ bg }};">
+      <svg viewBox="0 0 24 24" fill="none" stroke="{{ color }}" stroke-width="2" width="16" height="16">
+        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+        <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+      </svg>
     </div>
-    <div class="text-xs text-gray-400 truncate">{{ label }}</div>
+    <div class="stat-label">{{ label }}</div>
+    <div class="stat-value" style="color:{{ color }};">{{ stats[key] if stats[key] is not none else '—' }}</div>
   </div>
   {% endfor %}
-
 </div>
 
-{# ─── Refresh bar ─────────────────────────────────────────────────── #}
-<div class="flex items-center gap-3 mb-5 text-xs text-gray-500">
-  <span id="refresh-status" class="flex items-center gap-1.5">
-    <span class="inline-block w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
-    Loading chart data…
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+  <span id="refresh-status" style="font-size:12px;color:#64748b;display:flex;align-items:center;gap:7px;">
+    <span style="width:6px;height:6px;border-radius:50%;background:#f59e0b;display:inline-block;animation:pulse 1.5s infinite;"></span>
+    Loading charts...
   </span>
-  <span id="last-updated"></span>
-  <button onclick="loadAnalytics()"
-          class="ml-auto px-3 py-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 transition text-xs">
-    ↺ Refresh
-  </button>
+  <button onclick="loadAnalytics()" class="btn btn-secondary btn-sm">Refresh charts</button>
 </div>
 
-{# ─── Charts – top row ────────────────────────────────────────────── #}
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-
-  {# 1. Shipments Over Time — line chart #}
-  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
-    <h3 class="text-sm font-semibold text-gray-200 mb-4">Shipments Over Time</h3>
-    <div class="chart-wrap">
-      <canvas id="shipmentsOverTimeChart"></canvas>
-    </div>
-    <p id="shipmentsOverTime-empty" class="hidden text-center text-gray-600 text-xs py-10">
-      No shipment date data available.
-    </p>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+  <div class="card">
+    <div class="card-header"><span class="card-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Shipments Over Time
+    </span></div>
+    <div class="card-body"><canvas id="shipmentsOverTimeChart"></canvas></div>
   </div>
-
-  {# 2. Shipment Status Distribution — doughnut #}
-  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
-    <h3 class="text-sm font-semibold text-gray-200 mb-4">Shipment Status Distribution</h3>
-    <div class="chart-wrap flex justify-center">
-      <canvas id="statusDistributionChart"></canvas>
-    </div>
-    <p id="statusDistribution-empty" class="hidden text-center text-gray-600 text-xs py-10">
-      No shipment data available.
-    </p>
+  <div class="card">
+    <div class="card-header"><span class="card-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 118 2.83"/><path d="M22 12A10 10 0 0012 2v10z"/></svg>
+      Status Distribution
+    </span></div>
+    <div class="card-body" style="display:flex;justify-content:center;"><canvas id="statusDistributionChart"></canvas></div>
   </div>
-
 </div>
 
-{# ─── Charts – bottom row ─────────────────────────────────────────── #}
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-  {# 3. Vehicle Utilisation — horizontal bar #}
-  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
-    <h3 class="text-sm font-semibold text-gray-200 mb-4">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+  <div class="card">
+    <div class="card-header"><span class="card-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
       Vehicle Utilisation
-      <span class="text-gray-500 font-normal">(shipments handled)</span>
-    </h3>
-    <div class="chart-wrap-tall">
-      <canvas id="vehicleUtilizationChart"></canvas>
-    </div>
-    <p id="vehicleUtilization-empty" class="hidden text-center text-gray-600 text-xs py-10">
-      No vehicle or shipment data available.
-    </p>
+    </span></div>
+    <div class="card-body"><canvas id="vehicleUtilizationChart"></canvas></div>
   </div>
-
-  {# 4. Inventory Activity — grouped bar (stock vs capacity) #}
-  <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
-    <h3 class="text-sm font-semibold text-gray-200 mb-4">
-      Inventory Activity
-      <span class="text-gray-500 font-normal">(stock vs capacity per warehouse)</span>
-    </h3>
-    <div class="chart-wrap-tall">
-      <canvas id="inventoryActivityChart"></canvas>
-    </div>
-    <p id="inventoryActivity-empty" class="hidden text-center text-gray-600 text-xs py-10">
-      No inventory data available.
-    </p>
+  <div class="card">
+    <div class="card-header"><span class="card-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      Inventory vs Capacity
+    </span></div>
+    <div class="card-body"><canvas id="inventoryActivityChart"></canvas></div>
   </div>
-
 </div>
 
 {% endblock %}
-
 {% block scripts %}
 <script src="/static/js/analytics.js"></script>
 {% endblock %}
-

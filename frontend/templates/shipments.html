@@ -1,165 +1,96 @@
 {% extends "base.html" %}
 {% block title %}Shipments{% endblock %}
-{% block page_title %}📦 Shipment Management{% endblock %}
-
+{% block page_title %}Shipment Management{% endblock %}
 {% block content %}
 
-<!-- ── Create shipment form ──────────────────────────────────────── -->
-<div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
-  <h2 class="text-sm font-semibold text-gray-300 mb-4">+ New Shipment</h2>
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-    <div>
-      <label class="text-xs text-gray-400 block mb-1">Warehouse ID</label>
-      <input id="f-wh" type="number" placeholder="1"
-             class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100
-                    focus:outline-none focus:ring-1 focus:ring-blue-500" />
-    </div>
-    <div>
-      <label class="text-xs text-gray-400 block mb-1">Product ID</label>
-      <input id="f-prod" type="number" placeholder="1"
-             class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100
-                    focus:outline-none focus:ring-1 focus:ring-blue-500" />
-    </div>
-    <div>
-      <label class="text-xs text-gray-400 block mb-1">Quantity</label>
-      <input id="f-qty" type="number" placeholder="100"
-             class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100
-                    focus:outline-none focus:ring-1 focus:ring-blue-500" />
-    </div>
-    <div class="flex items-end">
-      <button onclick="createShipment()"
-              class="w-full bg-blue-700 hover:bg-blue-600 text-white text-sm font-medium rounded py-2 transition">
-        Create →
+<div class="card" style="margin-bottom:18px;">
+  <div class="card-header">
+    <span class="card-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      New Shipment
+    </span>
+  </div>
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:flex-end;">
+      <div><label class="form-label">Warehouse ID</label><input id="f-wh" type="number" placeholder="1" class="form-input" /></div>
+      <div><label class="form-label">Product ID</label><input id="f-prod" type="number" placeholder="1" class="form-input" /></div>
+      <div><label class="form-label">Quantity</label><input id="f-qty" type="number" placeholder="100" class="form-input" /></div>
+      <button onclick="createShipment()" class="btn btn-primary" style="white-space:nowrap;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Create
       </button>
     </div>
+    <p id="create-status" style="font-size:12px;color:#64748b;margin-top:8px;"></p>
   </div>
-  <p id="create-status" class="text-xs mt-2 text-gray-500"></p>
 </div>
 
-<!-- ── Filter bar ─────────────────────────────────────────────────── -->
-<div class="flex items-center gap-3 mb-4">
-  <label class="text-xs text-gray-400 uppercase tracking-wider">Filter:</label>
-  <select id="status-filter" onchange="applyFilter()"
-          class="bg-gray-800 border border-gray-700 text-sm text-gray-200 rounded px-3 py-1.5
-                 focus:outline-none focus:ring-1 focus:ring-blue-500">
-    <option value="">All Statuses</option>
-    <option value="Pending">Pending</option>
-    <option value="InTransit">In Transit</option>
-    <option value="Delivered">Delivered</option>
-    <option value="Cancelled">Cancelled</option>
-  </select>
-  <button onclick="refreshShipments()"
-          class="ml-auto text-xs text-blue-400 hover:text-blue-300 transition">⟳ Refresh</button>
-</div>
-
-<!-- ── Shipments table ────────────────────────────────────────────── -->
-<div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-  <div class="overflow-x-auto">
-    <table class="w-full text-sm text-left">
-      <thead class="text-xs text-gray-400 uppercase tracking-wider border-b border-gray-800">
-        <tr>
-          <th class="px-4 py-3">ID</th>
-          <th class="px-4 py-3">Warehouse</th>
-          <th class="px-4 py-3">Product</th>
-          <th class="px-4 py-3">Vehicle</th>
-          <th class="px-4 py-3">Qty</th>
-          <th class="px-4 py-3">Status</th>
-        </tr>
-      </thead>
-      <tbody id="shipment-table" class="text-gray-300 divide-y divide-gray-800/50">
-        <tr><td colspan="6" class="px-4 py-6 text-gray-500">Loading…</td></tr>
-      </tbody>
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+      All Shipments
+    </span>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <select id="status-filter" onchange="applyFilter()" class="form-select" style="width:auto;padding:5px 32px 5px 10px;font-size:12px;">
+        <option value="">All statuses</option>
+        <option>Pending</option><option>InTransit</option><option>Delivered</option><option>Cancelled</option>
+      </select>
+      <button onclick="refreshShipments()" class="btn btn-secondary btn-sm">Refresh</button>
+    </div>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="tbl">
+      <thead><tr><th>ID</th><th>Warehouse</th><th>Product</th><th>Vehicle</th><th>Qty</th><th>Status</th></tr></thead>
+      <tbody id="shipment-table"><tr><td colspan="6" style="color:#94a3b8;">Loading&hellip;</td></tr></tbody>
     </table>
   </div>
+  <div style="padding:10px 16px;border-top:1px solid #f1f5f9;">
+    <span id="shipment-count" style="font-size:12px;color:#94a3b8;"></span>
+  </div>
 </div>
 
-<p class="text-xs text-gray-600 mt-3" id="shipment-count"></p>
-
 {% endblock %}
-
 {% block scripts %}
 <script>
 let allShipments = [];
-
-const statusStyle = {
-  Pending:   'bg-yellow-900/50 text-yellow-300',
-  InTransit: 'bg-blue-900/50 text-blue-300',
-  Delivered: 'bg-green-900/50 text-green-300',
-  Cancelled: 'bg-red-900/50 text-red-300',
-};
+const badgeClass = { Pending:'badge-pending', InTransit:'badge-transit', Delivered:'badge-delivered', Cancelled:'badge-cancelled' };
 
 function renderTable(rows) {
   const tbody = document.getElementById('shipment-table');
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-gray-500">No shipments match.</td></tr>';
-    document.getElementById('shipment-count').textContent = '';
-    return;
-  }
-  tbody.innerHTML = rows.map(s => `
-    <tr>
-      <td class="px-4 py-3 text-gray-500 font-mono">#${s.id}</td>
-      <td class="px-4 py-3">${s.warehouse_id}</td>
-      <td class="px-4 py-3">${s.product_id}</td>
-      <td class="px-4 py-3">${s.vehicle_id ?? '<span class="text-gray-600">—</span>'}</td>
-      <td class="px-4 py-3">${s.quantity}</td>
-      <td class="px-4 py-3">
-        <span class="px-2 py-0.5 rounded text-xs ${statusStyle[s.status] || 'text-gray-400'}">
-          ${s.status}
-        </span>
-      </td>
-    </tr>
-  `).join('');
-  document.getElementById('shipment-count').textContent = `Showing ${rows.length} shipment(s)`;
+  document.getElementById('shipment-count').textContent = rows.length ? `${rows.length} shipment(s)` : '';
+  if (!rows.length) { tbody.innerHTML='<tr><td colspan="6" style="color:#94a3b8;">No shipments match.</td></tr>'; return; }
+  tbody.innerHTML = rows.map(s => `<tr>
+    <td class="tbl-mono">#${s.id}</td><td>${s.warehouse_id}</td><td>${s.product_id}</td>
+    <td>${s.vehicle_id??'<span style="color:#cbd5e1;">—</span>'}</td>
+    <td style="font-weight:500;">${s.quantity}</td>
+    <td><span class="badge ${badgeClass[s.status]||'badge-pending'}">${s.status}</span></td>
+  </tr>`).join('');
 }
 
 function applyFilter() {
-  const filter = document.getElementById('status-filter').value;
-  renderTable(filter ? allShipments.filter(s => s.status === filter) : allShipments);
+  const f = document.getElementById('status-filter').value;
+  renderTable(f ? allShipments.filter(s=>s.status===f) : allShipments);
 }
 
 async function refreshShipments() {
-  try {
-    const r = await fetch('/api/shipments');
-    const data = await r.json();
-    allShipments = Array.isArray(data) ? data : [];
-    applyFilter();
-  } catch(e) {
-    document.getElementById('shipment-table').innerHTML =
-      '<tr><td colspan="6" class="px-4 py-6 text-red-400">Failed to load shipments.</td></tr>';
-  }
+  try { const r = await fetch('/api/shipments'); allShipments = await r.json(); if(!Array.isArray(allShipments)) allShipments=[]; applyFilter(); }
+  catch(e) { document.getElementById('shipment-table').innerHTML='<tr><td colspan="6" style="color:#ef4444;">Failed to load.</td></tr>'; }
 }
 
 async function createShipment() {
-  const wh   = parseInt(document.getElementById('f-wh').value);
-  const prod = parseInt(document.getElementById('f-prod').value);
-  const qty  = parseInt(document.getElementById('f-qty').value);
-  const statusEl = document.getElementById('create-status');
-
-  if (!wh || !prod || !qty) {
-    statusEl.textContent = '⚠ All fields required.'; return;
-  }
+  const btn=document.querySelector('[onclick="createShipment()"]'); const st=document.getElementById('create-status');
+  const body={warehouse_id:+document.getElementById('f-wh').value,product_id:+document.getElementById('f-prod').value,quantity:+document.getElementById('f-qty').value};
+  if(!body.warehouse_id||!body.product_id||!body.quantity){st.style.color='#ef4444';st.textContent='All fields required.';return;}
+  btn.disabled=true;
   try {
-    const r = await fetch('/api/shipments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ warehouse_id: wh, product_id: prod, quantity: qty }),
-    });
-    if (r.ok) {
-      statusEl.className = 'text-xs mt-2 text-green-400';
-      statusEl.textContent = '✅ Shipment created.';
-      refreshShipments();
-    } else {
-      const err = await r.json();
-      statusEl.className = 'text-xs mt-2 text-red-400';
-      statusEl.textContent = `Error: ${err.detail || err.error || r.status}`;
-    }
-  } catch(e) {
-    statusEl.textContent = '❌ Network error.';
-  }
-  setTimeout(() => { statusEl.textContent = ''; }, 4000);
+    const r=await fetch('/api/shipments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(r.ok){st.style.color='#10b981';st.textContent='Shipment created.';refreshShipments();}
+    else{const d=await r.json();st.style.color='#ef4444';st.textContent=d.detail||'Error.';}
+  } catch(e){st.style.color='#ef4444';st.textContent='Network error.';}
+  btn.disabled=false;
 }
 
 refreshShipments();
-setInterval(refreshShipments, 20_000);
+setInterval(refreshShipments,20000);
 </script>
 {% endblock %}
